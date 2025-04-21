@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: predictionpulse-api
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn api:app --host 0.0.0.0 --port 10000"
+    plan: free
+    envVars:
+      - key: KALSHI_API_KEY
+        sync: false
+      - key: KALSHI_API_SECRET
+        sync: false
+
+  - type: background
+    name: kalshi-ws-listener
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python kalshi_ws_live.py"
+    plan: free
+    envVars:
+      - key: KALSHI_API_KEY
+        sync: false
+      - key: KALSHI_API_SECRET
+        sync: false
+
+  - type: cron
+    name: polymarket-fetcher
+    env: python
+    schedule: "*/5 * * * *"
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python polymarket_fetch.py"
+    plan: free
+    envVars:
+      - key: KALSHI_API_KEY
+        sync: false
+      - key: KALSHI_API_SECRET
+        sync: false
