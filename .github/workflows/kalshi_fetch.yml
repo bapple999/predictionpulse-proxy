@@ -1,0 +1,26 @@
+name: Kalshi Fetch Cron
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'  # every 5 min
+  workflow_dispatch:
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Kalshi Fetch
+        env:
+          KALSHI_API_KEY: ${{ secrets.KALSHI_API_KEY }}
+        run: python kalshi_fetch.py
