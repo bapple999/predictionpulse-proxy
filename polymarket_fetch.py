@@ -12,18 +12,18 @@ def fetch_polymarket():
         }"""
     }
 
-    r = requests.post("https://api.thegraph.com/subgraphs/name/polymarket/polymarket", json=query)
-
     try:
+        r = requests.post("https://api.thegraph.com/subgraphs/name/polymarket/polymarket", json=query)
+        r.raise_for_status()
         result = r.json()
     except Exception as e:
-        print("❌ Failed to parse JSON:", e)
-        print("🔍 Raw response:", r.text)
+        print("❌ Failed to fetch or parse JSON from Polymarket:", e)
+        print("🔍 Raw response text:", r.text if r else "No response object")
         return
 
-    if "data" not in result:
-        print("❌ 'data' not in response. Full response:")
-        print(result)
+    if "data" not in result or "markets" not in result["data"]:
+        print("❌ 'data' or 'markets' key missing in response")
+        print("🔍 Full response JSON:", result)
         return
 
     markets = result["data"]["markets"]
@@ -43,8 +43,11 @@ def fetch_polymarket():
             "source": "polymarket"
         })
 
-    post = requests.post("https://predictionpulse-proxy-1.onrender.com/", json=cleaned)
-    print(f"✅ Posted {len(cleaned)} Polymarket markets: {post.status_code}")
+    try:
+        post = requests.post("https://your-api.onrender.com/ingest", json=cleaned)
+        print(f"✅ Posted {len(cleaned)} Polymarket markets: {post.status_code}")
+    except Exception as e:
+        print("❌ Failed to post data to your API:", e)
 
 if __name__ == "__main__":
     fetch_polymarket()
