@@ -44,7 +44,7 @@ def fetch_polymarket():
         })
 
     try:
-        post = requests.post("https://your-api.onrender.com/ingest", json=cleaned)
+        post = requests.post("https://predictionpulse-proxy-1.onrender.com/", json=cleaned)
         print(f"✅ Posted {len(cleaned)} Polymarket markets: {post.status_code}")
     except Exception as e:
         print("❌ Failed to post data to your API:", e)
