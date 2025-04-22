@@ -13,8 +13,19 @@ def fetch_polymarket():
     }
 
     r = requests.post("https://api.thegraph.com/subgraphs/name/polymarket/polymarket", json=query)
-    r.raise_for_status()
-    data = r.json()['data']['markets']
+    try:
+        result = r.json()
+    except Exception as e:
+        print("❌ Failed to parse JSON:", e)
+        print("🔍 Raw response:", r.text)
+        return
+
+    if "data" not in result:
+        print("❌ No 'data' in response. Full response:", result)
+        return
+
+    data = result["data"]["markets"]
+
 
     cleaned = []
 
