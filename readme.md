@@ -80,4 +80,4 @@ GET /markets/movers     # Top 10 markets by 24h % change
 ---
 
 ## 👋 Credits
-Built by @yourname — inspired by prediction markets, CMC, and the future of market intelligence.
+Built by @bapple — inspired by prediction markets, CMC, and the future of market intelligence.
