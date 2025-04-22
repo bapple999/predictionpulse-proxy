@@ -1,3 +1,5 @@
+# api.py
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from data_store import update_market, get_markets, get_top_movers
@@ -6,11 +8,15 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Adjust for production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/")
+def root():
+    return {"message": "Prediction Pulse API is live.", "routes": ["/markets/live", "/markets/movers", "/ingest"]}
 
 @app.get("/markets/live")
 def live_markets():
@@ -30,4 +36,4 @@ async def ingest(request: Request):
             volume=market["volume"],
             source=market.get("source", "unknown")
         )
-    return {"status": "ok"}
+    return {"status": "success"}
