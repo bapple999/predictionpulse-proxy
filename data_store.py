@@ -41,6 +41,5 @@ def get_top_movers(limit=10):
 def get_markets():
     return list(market_data.values())
 
-from data_store import update_market, get_markets, get_top_movers
 
 
