@@ -1,35 +1,42 @@
-import os
 import requests
 
-KALSHI_API = "https://api.elections.kalshi.com/trade-api/v2/markets"
-headers = {
-    "Authorization": f"Bearer {os.environ['KALSHI_API_KEY']}"
-}
+API_URL = "https://predictionpulse-proxy-1.onrender.com/ingest"
+GAMMA_URL = "https://gamma-api.polymarket.com/markets"
 
-def fetch_kalshi():
-    res = requests.get(KALSHI_API, headers=headers)
-    res.raise_for_status()
-    data = res.json().get("markets", [])
+def fetch_polymarket():
+    try:
+        response = requests.get(GAMMA_URL, params={"limit": 100})
+        response.raise_for_status()
+        markets = response.json()
+    except Exception as e:
+        print("❌ Failed to fetch from Gamma API:", e)
+        return
 
     cleaned = []
+    for market in markets:
+        try:
+            prices = market.get("outcomePrices")
+            volume = float(market.get("volumeClob", 0))
 
-    for market in data:
-        yes_bid = market.get("yes_bid")
-        no_bid = market.get("no_bid")
+            if not prices:
+                continue
 
-        if yes_bid is None or no_bid is None:
-            continue
+            avg_price = sum(map(float, prices)) / len(prices)
 
-        prob = (yes_bid + (1 - no_bid)) / 2
-        cleaned.append({
-            "market_id": market.get("ticker"),
-            "price": prob,
-            "volume": market.get("volume", 0),
-            "source": "kalshi"
-        })
+            cleaned.append({
+                "market_id": market.get("id"),
+                "price": avg_price,
+                "volume": volume,
+                "source": "polymarket"
+            })
+        except Exception as e:
+            print(f"⚠️ Skipping bad market: {e}")
 
-    post = requests.post("https://predictionpulse-proxy-1.onrender.com/ingest", json=cleaned)
-    print(f"✅ Posted {len(cleaned)} Kalshi markets: {post.status_code}")
+    try:
+        res = requests.post(API_URL, json=cleaned)
+        print(f"✅ Posted {len(cleaned)} Polymarket markets: {res.status_code}")
+    except Exception as e:
+        print("❌ Failed to post to your API:", e)
 
 if __name__ == "__main__":
-    fetch_kalshi()
+    fetch_polymarket()
