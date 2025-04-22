@@ -13,6 +13,7 @@ def fetch_polymarket():
     }
 
     r = requests.post("https://api.thegraph.com/subgraphs/name/polymarket/polymarket", json=query)
+
     try:
         result = r.json()
     except Exception as e:
@@ -21,15 +22,14 @@ def fetch_polymarket():
         return
 
     if "data" not in result:
-        print("❌ No 'data' in response. Full response:", result)
+        print("❌ 'data' not in response. Full response:")
+        print(result)
         return
 
-    data = result["data"]["markets"]
-
-
+    markets = result["data"]["markets"]
     cleaned = []
 
-    for market in data:
+    for market in markets:
         if not market['outcomes']:
             continue
         prices = [o['price'] for o in market['outcomes'] if o['price'] is not None]
