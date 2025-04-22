@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 
+# In-memory storage
 market_data = {}
 market_24h = {}
 
@@ -12,6 +13,7 @@ def update_market(market_id, price, volume, source):
         "timestamp": now
     }
 
+    # Save a 24h snapshot for calculating % change
     if market_id not in market_24h or now - market_24h[market_id]['timestamp'] > timedelta(hours=24):
         market_24h[market_id] = {
             "price": price,
@@ -24,7 +26,8 @@ def get_top_movers(limit=10):
         if market_id in market_24h:
             price_now = market_data[market_id]['price']
             price_then = market_24h[market_id]['price']
-            change = ((price_now - price_then) / price_then) * 100 if price_then != 0 else 0
+            change = ((price_now - price_then) / price_then) * 100 if price_then else 0
+
             movers.append({
                 "market_id": market_id,
                 "price": price_now,
@@ -32,7 +35,8 @@ def get_top_movers(limit=10):
                 "source": market_data[market_id]['source'],
                 "change_24h": round(change, 2)
             })
+
     return sorted(movers, key=lambda x: abs(x['change_24h']), reverse=True)[:limit]
 
-def get_all_markets():
-    return market_data
+def get_markets():
+    return list(market_data.values())
