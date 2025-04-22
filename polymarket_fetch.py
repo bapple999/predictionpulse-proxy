@@ -43,7 +43,7 @@ def fetch_polymarket():
             "source": "polymarket"
         })
 
-    post = requests.post("https://your-api.onrender.com/ingest", json=cleaned)
+    post = requests.post("https://predictionpulse-proxy-1.onrender.com/", json=cleaned)
     print(f"✅ Posted {len(cleaned)} Polymarket markets: {post.status_code}")
 
 if __name__ == "__main__":
