@@ -1,42 +1,35 @@
-from datetime import datetime, timedelta
+import os
+import requests
 
-# In-memory storage
-market_data = {}
-market_24h = {}
+KALSHI_API = "https://api.elections.kalshi.com/trade-api/v2/markets"
+headers = {
+    "Authorization": f"Bearer {os.environ['KALSHI_API_KEY']}"
+}
 
-def update_market(market_id, price, volume, source):
-    now = datetime.utcnow()
-    market_data[market_id] = {
-        "price": price,
-        "volume": volume,
-        "source": source,
-        "timestamp": now
-    }
+def fetch_kalshi():
+    res = requests.get(KALSHI_API, headers=headers)
+    res.raise_for_status()
+    data = res.json().get("markets", [])
 
-    # Save a 24h snapshot for calculating % change
-    if market_id not in market_24h or now - market_24h[market_id]['timestamp'] > timedelta(hours=24):
-        market_24h[market_id] = {
-            "price": price,
-            "timestamp": now
-        }
+    cleaned = []
 
-def get_top_movers(limit=10):
-    movers = []
-    for market_id in market_data:
-        if market_id in market_24h:
-            price_now = market_data[market_id]['price']
-            price_then = market_24h[market_id]['price']
-            change = ((price_now - price_then) / price_then) * 100 if price_then else 0
+    for market in data:
+        yes_bid = market.get("yes_bid")
+        no_bid = market.get("no_bid")
 
-            movers.append({
-                "market_id": market_id,
-                "price": price_now,
-                "volume": market_data[market_id]['volume'],
-                "source": market_data[market_id]['source'],
-                "change_24h": round(change, 2)
-            })
+        if yes_bid is None or no_bid is None:
+            continue
 
-    return sorted(movers, key=lambda x: abs(x['change_24h']), reverse=True)[:limit]
+        prob = (yes_bid + (1 - no_bid)) / 2
+        cleaned.append({
+            "market_id": market.get("ticker"),
+            "price": prob,
+            "volume": market.get("volume", 0),
+            "source": "kalshi"
+        })
 
-def get_markets():
-    return list(market_data.values())
+    post = requests.post("https://predictionpulse-proxy-1.onrender.com/ingest", json=cleaned)
+    print(f"✅ Posted {len(cleaned)} Kalshi markets: {post.status_code} | {post.text}")
+
+if __name__ == "__main__":
+    fetch_kalshi()
