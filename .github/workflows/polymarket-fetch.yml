@@ -21,4 +21,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run Polymarket Fetch
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: python polymarket_fetch.py
