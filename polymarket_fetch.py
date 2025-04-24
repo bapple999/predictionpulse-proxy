@@ -1,28 +1,37 @@
+import os
 import requests
-import json
+from datetime import datetime
 
-API_URL = "https://predictionpulse-proxy-1.onrender.com/ingest"
+SUPABASE_URL = os.environ['SUPABASE_URL']
+SUPABASE_KEY = os.environ['SUPABASE_SERVICE_ROLE_KEY']
 GAMMA_URL = "https://gamma-api.polymarket.com/markets"
 
+def insert_to_supabase(payload):
+    res = requests.post(
+        f"{SUPABASE_URL}/rest/v1/market_snapshots",
+        headers={
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal"
+        },
+        json=payload
+    )
+    print(f"✅ Supabase insert status: {res.status_code}")
+    if res.status_code != 201:
+        print("⚠️", res.text)
+
 def fetch_polymarket():
-    try:
-        response = requests.get(GAMMA_URL, params={"limit": 100})
-        response.raise_for_status()
-        markets = response.json()
-    except Exception as e:
-        print("❌ Failed to fetch from Gamma API:", e)
-        return
+    res = requests.get(GAMMA_URL, params={"limit": 100})
+    res.raise_for_status()
+    markets = res.json()
 
     cleaned = []
+
     for market in markets:
         try:
-            prices_raw = market.get("outcomePrices")
-            if not prices_raw:
-                continue
-
-            # Convert stringified list to actual list of floats
-            prices = json.loads(prices_raw)
-            if not isinstance(prices, list) or len(prices) == 0:
+            prices = market.get("outcomePrices")
+            if not prices:
                 continue
 
             avg_price = sum(map(float, prices)) / len(prices)
@@ -30,19 +39,15 @@ def fetch_polymarket():
 
             cleaned.append({
                 "market_id": market.get("id"),
-                "price": avg_price,
+                "price": round(avg_price, 4),
                 "volume": volume,
-                "source": "polymarket"
+                "source": "polymarket",
+                "timestamp": datetime.utcnow().isoformat()
             })
-
         except Exception as e:
             print(f"⚠️ Skipping bad market: {e}")
 
-    try:
-        res = requests.post(API_URL, json=cleaned)
-        print(f"✅ Posted {len(cleaned)} Polymarket markets: {res.status_code} | {res.text}")
-    except Exception as e:
-        print("❌ Failed to post to your API:", e)
+    insert_to_supabase(cleaned)
 
 if __name__ == "__main__":
     fetch_polymarket()
