@@ -4,9 +4,8 @@ from datetime import datetime
 
 SUPABASE_URL = os.environ['SUPABASE_URL']
 SUPABASE_KEY = os.environ['SUPABASE_SERVICE_ROLE_KEY']
-
 KALSHI_API = "https://api.elections.kalshi.com/trade-api/v2/markets"
-headers = {
+HEADERS = {
     "Authorization": f"Bearer {os.environ['KALSHI_API_KEY']}"
 }
 
@@ -26,28 +25,38 @@ def insert_to_supabase(payload):
         print("⚠️", res.text)
 
 def fetch_kalshi():
-    res = requests.get(KALSHI_API, headers=headers)
+    print("📡 Fetching Kalshi markets...")
+    res = requests.get(KALSHI_API, headers=HEADERS, params={"limit": 1000})
     res.raise_for_status()
     markets = res.json().get("markets", [])
 
-    cleaned = []
+    print(f"🔍 Retrieved {len(markets)} markets")
+    markets_with_volume = [m for m in markets if m.get("volume")]
 
-    for market in markets:
+    sorted_markets = sorted(markets_with_volume, key=lambda m: m["volume"], reverse=True)[:100]
+
+    payload = []
+    for market in sorted_markets:
         yes_bid = market.get("yes_bid")
         no_bid = market.get("no_bid")
         if yes_bid is None or no_bid is None:
             continue
         prob = (yes_bid + (1 - no_bid)) / 2
 
-        cleaned.append({
+        payload.append({
             "market_id": market.get("ticker"),
+            "market_name": market.get("title", ""),
             "price": round(prob, 4),
+            "yes_bid": yes_bid,
+            "no_bid": no_bid,
             "volume": market.get("volume", 0),
-            "source": "kalshi",
+            "liquidity": market.get("open_interest", 0),
+            "source": "kalshi_rest",
             "timestamp": datetime.utcnow().isoformat()
         })
 
-    insert_to_supabase(cleaned)
+    print(f"📦 Prepared {len(payload)} market entries for Supabase")
+    insert_to_supabase(payload)
 
 if __name__ == "__main__":
     fetch_kalshi()
