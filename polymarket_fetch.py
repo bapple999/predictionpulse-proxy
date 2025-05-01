@@ -1,84 +1,86 @@
-import os
 import requests
 from datetime import datetime
+import pytz
+import os
 
-SUPABASE_URL = os.environ['SUPABASE_URL']
-SUPABASE_KEY = os.environ['SUPABASE_SERVICE_ROLE_KEY']
+# Supabase configuration
+SUPABASE_URL = os.getenv("SUPABASE_URL", "https://oedvfgnnheevwhpubvzf.supabase.co")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "your_supabase_key_here")  # Replace with your actual key
+
+# GraphQL endpoint for Polymarket
 GRAPHQL_ENDPOINT = "https://api.thegraph.com/subgraphs/name/Polymarket/polymarket"
 
-def insert_to_supabase(payload):
-    res = requests.post(
-        f"{SUPABASE_URL}/rest/v1/market_snapshots",
-        headers={
-            "apikey": SUPABASE_KEY,
-            "Authorization": f"Bearer {SUPABASE_KEY}",
-            "Content-Type": "application/json",
-            "Prefer": "return=minimal"
-        },
-        json=payload
-    )
-    print(f"✅ Supabase insert status: {res.status_code}")
-    if res.status_code != 201:
-        print("⚠️", res.text)
-
-def fetch_polymarket():
-    print("📡 Fetching Polymarket markets from GraphQL...")
-
-    query = """
-    {
-      markets(first: 1000, orderBy: volume, orderDirection: desc) {
-        id
-        question
-        volume
-        endTime
-        outcomes {
-          name
-          price
-        }
-      }
+# GraphQL query to fetch markets
+query = """
+{
+  markets(first: 1000, orderBy: volume, orderDirection: desc) {
+    id
+    question
+    outcomes {
+      id
+      name
+      price
+      yesBid
+      noBid
     }
-    """
+    volume
+    liquidity
+    endTime
+    tags
+  }
+}
+"""
 
-    res = requests.post(GRAPHQL_ENDPOINT, json={"query": query})
-    res.raise_for_status()
-    data = res.json()
+def fetch_polymarket_data():
+    print("📡 Fetching Polymarket markets from GraphQL...")
+    response = requests.post(GRAPHQL_ENDPOINT, json={'query': query})
+    if response.status_code != 200:
+        print(f"❌ Failed to fetch data: {response.status_code}")
+        return []
+
+    data = response.json()
     markets = data.get("data", {}).get("markets", [])
     print(f"🔍 Retrieved {len(markets)} markets")
+    return markets
 
-    payload = []
-
+def transform_market_data(markets):
+    transformed = []
     for market in markets:
-        outcomes = market.get("outcomes", [])
-        try:
-            prices = [float(o["price"]) for o in outcomes if o.get("price") is not None]
-            if not prices:
-                continue
-            avg_price = sum(prices) / len(prices)
-        except Exception as e:
-            print(f"⚠️ Skipping market {market['id']} due to price error: {e}")
-            continue
+        for outcome in market.get("outcomes", []):
+            transformed.append({
+                "market_id": market["id"],
+                "market_name": market["question"],
+                "price": float(outcome.get("price", 0)),
+                "volume": float(market.get("volume", 0)),
+                "liquidity": float(market.get("liquidity", 0)),
+                "source": "polymarket",
+                "timestamp": datetime.now(pytz.utc).isoformat(),
+                "yes_bid": float(outcome.get("yesBid", 0)),
+                "no_bid": float(outcome.get("noBid", 0)),
+                "market_description": None,
+                "event_name": None,
+                "event_ticker": None,
+                "status": None,
+                "expiration": datetime.fromtimestamp(int(market.get("endTime", 0)), pytz.utc).isoformat() if market.get("endTime") else None,
+                "tags": market.get("tags", [])
+            })
+    print(f"📦 Prepared {len(transformed)} market entries for Supabase")
+    return transformed
 
-        payload.append({
-            "market_id": market.get("id", ""),
-            "market_name": market.get("question", ""),
-            "market_description": None,
-            "event_name": "Polymarket",
-            "event_ticker": None,
-            "price": round(avg_price, 4),
-            "yes_bid": None,
-            "no_bid": None,
-            "volume": float(market.get("volume", 0)),
-            "liquidity": None,
-            "status": "unknown",
-            "expiration": market.get("endTime"),
-            "tags": ["polymarket"],
-            "source": "polymarket_graphql",
-            "timestamp": datetime.utcnow().isoformat()
-        })
-
-    print(f"📦 Prepared {len(payload)} market entries for Supabase")
-    insert_to_supabase(payload)
+def insert_into_supabase(data):
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json"
+    }
+    response = requests.post(f"{SUPABASE_URL}/rest/v1/market_snapshots", headers=headers, json=data)
+    if response.status_code in [200, 201]:
+        print(f"✅ Supabase insert status: {response.status_code}")
+    else:
+        print(f"❌ Supabase insert failed: {response.status_code} - {response.text}")
 
 if __name__ == "__main__":
-    fetch_polymarket()
-
+    markets = fetch_polymarket_data()
+    if markets:
+        transformed_data = transform_market_data(markets)
+        insert_into_supabase(transformed_data)
