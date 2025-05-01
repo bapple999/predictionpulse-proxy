@@ -50,23 +50,25 @@ def fetch_kalshi():
         if yes_bid is None or no_bid is None:
             continue
         prob = (yes_bid + (1 - no_bid)) / 2
-        event_ticker = market.get("event_ticker")
+
+        event_ticker = market.get("event_ticker") or ""
         event = events.get(event_ticker, {})
+        event_name = event.get("title", "") if event else ""
 
         payload.append({
-            "market_id": market.get("ticker"),
+            "market_id": market.get("ticker", ""),
             "market_name": market.get("title", ""),
             "market_description": market.get("description", ""),
-            "event_name": event.get("title", ""),
+            "event_name": event_name,
             "event_ticker": event_ticker,
             "price": round(prob, 4),
             "yes_bid": yes_bid,
             "no_bid": no_bid,
             "volume": market.get("volume", 0),
             "liquidity": market.get("open_interest", 0),
-            "status": market.get("status"),
+            "status": market.get("status", "unknown"),
             "expiration": market.get("expiration"),
-            "tags": market.get("tags", []),
+            "tags": market.get("tags") if isinstance(market.get("tags"), list) else [],
             "source": "kalshi_rest",
             "timestamp": datetime.utcnow().isoformat()
         })
