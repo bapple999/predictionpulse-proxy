@@ -1,6 +1,7 @@
 import os
 import requests
 from datetime import datetime
+import time
 
 SUPABASE_URL = os.environ['SUPABASE_URL']
 SUPABASE_KEY = os.environ['SUPABASE_SERVICE_ROLE_KEY']
@@ -29,6 +30,10 @@ def fetch_polymarket():
 
     while True:
         res = requests.get(GAMMA_API, params={"limit": limit, "offset": offset})
+        if res.status_code == 429:
+            print("⏳ Rate limited. Sleeping 10 seconds...")
+            time.sleep(10)
+            continue
         res.raise_for_status()
         batch = res.json()
         if not batch:
@@ -36,12 +41,29 @@ def fetch_polymarket():
         all_markets.extend(batch)
         print(f"🔄 Retrieved {len(batch)} markets (offset {offset})")
         offset += limit
+        time.sleep(0.25)  # prevent rate limits
 
-    print(f"🔍 Total markets retrieved: {len(all_markets)}")
+    print(f"📦 Total markets fetched: {len(all_markets)}")
+
+    # Filter: future expiration
+    now_iso = datetime.utcnow().isoformat()
+    future_markets = [
+        m for m in all_markets
+        if m.get("endDate") and m["endDate"] > now_iso
+    ]
+    print(f"⏳ Markets with future expiration: {len(future_markets)}")
+
+    # Sort by volume and take top 1,000
+    sorted_markets = sorted(
+        future_markets,
+        key=lambda m: float(m.get("volumeUsd") or 0),
+        reverse=True
+    )
+    top_markets = sorted_markets[:1000]
+    print(f"🏆 Top 1000 future markets by volume selected")
 
     payload = []
-
-    for market in all_markets:
+    for market in top_markets:
         try:
             prices = list(map(float, eval(market.get("outcomePrices", "[]"))))
             if not prices:
@@ -60,7 +82,7 @@ def fetch_polymarket():
             "price": round(avg_price, 4),
             "yes_bid": None,
             "no_bid": None,
-            "volume": float(market.get("volumeUsd", 0)),  # USD volume
+            "volume": float(market.get("volumeUsd", 0)),
             "liquidity": float(market.get("liquidity", 0)),
             "status": market.get("status", "unknown"),
             "expiration": market.get("endDate"),
@@ -69,7 +91,7 @@ def fetch_polymarket():
             "timestamp": datetime.utcnow().isoformat() + "Z"
         })
 
-    print(f"📦 Prepared {len(payload)} entries for Supabase")
+    print(f"🚀 Prepared {len(payload)} markets to insert")
     insert_to_supabase(payload)
 
 if __name__ == "__main__":
