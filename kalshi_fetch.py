@@ -33,7 +33,7 @@ def fetch_events():
 
     event_dict = {}
     for event in events:
-        ticker = event.get("ticker")
+        ticker = event.get("ticker") or event.get("event_ticker")
         if ticker:
             event_dict[ticker] = event
         else:
