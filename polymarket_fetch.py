@@ -41,26 +41,31 @@ def fetch_polymarket():
         all_markets.extend(batch)
         print(f"🔄 Retrieved {len(batch)} markets (offset {offset})")
         offset += limit
-        time.sleep(0.25)  # prevent rate limits
+        time.sleep(0.25)  # reduce API strain
 
     print(f"📦 Total markets fetched: {len(all_markets)}")
 
-    # Filter: future expiration
-    now_iso = datetime.utcnow().isoformat()
-    future_markets = [
-        m for m in all_markets
-        if m.get("endDate") and m["endDate"] > now_iso
-    ]
-    print(f"⏳ Markets with future expiration: {len(future_markets)}")
+    # Filter: future expiration, volume > 1000, outcome prices not flat 0.5s
+    now = datetime.utcnow().isoformat()
+    valid_markets = []
+    for m in all_markets:
+        try:
+            if not m.get("endDate") or m["endDate"] <= now:
+                continue
+            if float(m.get("volumeUsd") or 0) < 1000:
+                continue
+            prices = list(map(float, eval(m.get("outcomePrices", "[]"))))
+            if all(round(p, 2) == 0.5 for p in prices):
+                continue
+        except Exception as e:
+            continue
+        valid_markets.append(m)
 
-    # Sort by volume and take top 1,000
-    sorted_markets = sorted(
-        future_markets,
-        key=lambda m: float(m.get("volumeUsd") or 0),
-        reverse=True
-    )
+    print(f"✅ Valid markets after filters: {len(valid_markets)}")
+
+    # Sort by volume
+    sorted_markets = sorted(valid_markets, key=lambda m: float(m.get("volumeUsd") or 0), reverse=True)
     top_markets = sorted_markets[:1000]
-    print(f"🏆 Top 1000 future markets by volume selected")
 
     payload = []
     for market in top_markets:
@@ -70,13 +75,12 @@ def fetch_polymarket():
                 continue
             avg_price = sum(prices) / len(prices)
         except Exception as e:
-            print(f"⚠️ Skipping market {market.get('id')} due to price error: {e}")
             continue
 
         payload.append({
             "market_id": market.get("id"),
-            "market_name": market.get("title", ""),
-            "market_description": market.get("description", None),
+            "market_name": market.get("title") or market.get("slug", ""),
+            "market_description": None,
             "event_name": "Polymarket",
             "event_ticker": None,
             "price": round(avg_price, 4),
@@ -84,14 +88,14 @@ def fetch_polymarket():
             "no_bid": None,
             "volume": float(market.get("volumeUsd", 0)),
             "liquidity": float(market.get("liquidity", 0)),
-            "status": market.get("status", "unknown"),
+            "status": "active",  # Gamma has no status field
             "expiration": market.get("endDate"),
-            "tags": market.get("categories", []),
+            "tags": market.get("categories", ["polymarket"]),
             "source": "polymarket_gamma",
             "timestamp": datetime.utcnow().isoformat() + "Z"
         })
 
-    print(f"🚀 Prepared {len(payload)} markets to insert")
+    print(f"🚀 Prepared {len(payload)} entries for Supabase insert")
     insert_to_supabase(payload)
 
 if __name__ == "__main__":
