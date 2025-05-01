@@ -42,6 +42,7 @@ def fetch_events():
     print(f"📂 Loaded {len(event_dict)} valid events")
     return event_dict
 
+
 def fetch_kalshi():
     print("📡 Fetching Kalshi markets...")
     res = requests.get(KALSHI_MARKETS_API, headers=HEADERS, params={"limit": 1000})
