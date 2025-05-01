@@ -33,7 +33,7 @@ def fetch_polymarket():
     for market in markets:
         try:
             prices_raw = market.get("outcomePrices")
-            prices = list(map(float, eval(prices_raw)))  # Convert from string like '["0.5", "0.5"]'
+            prices = list(map(float, eval(prices_raw)))  # e.g. '["0.55", "0.45"]'
         except Exception as e:
             print(f"⚠️ Skipping market {market.get('id')}: {e}")
             continue
@@ -44,17 +44,17 @@ def fetch_polymarket():
         avg_price = sum(prices) / len(prices)
 
         payload.append({
-            "market_id": market.get("id"),
+            "market_id": market.get("id", ""),
             "market_name": market.get("title", ""),
             "market_description": market.get("description", ""),
-            "event_name": market.get("category", ""),  # not a true event, but serves that role
-            "event_ticker": None,  # Polymarket doesn’t use this
+            "event_name": market.get("category", "Unknown"),
+            "event_ticker": None,  # Polymarket doesn't use this concept
             "price": round(avg_price, 4),
             "yes_bid": None,
             "no_bid": None,
             "volume": float(market.get("volumeClob", 0)),
             "liquidity": float(market.get("liquidity", 0)),
-            "status": market.get("status"),
+            "status": market.get("status", "unknown"),
             "expiration": market.get("endDate"),
             "tags": [market.get("category")] if market.get("category") else [],
             "source": "polymarket",
@@ -66,4 +66,3 @@ def fetch_polymarket():
 
 if __name__ == "__main__":
     fetch_polymarket()
-
