@@ -2,10 +2,9 @@ import os
 import requests
 from datetime import datetime
 
-SUPABASE_URL = os.environ.get('SUPABASE_URL')
-SUPABASE_KEY = os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
-
-POLYMARKET_API = "https://strapi-matic.poly.market/markets"
+SUPABASE_URL = os.environ['SUPABASE_URL']
+SUPABASE_KEY = os.environ['SUPABASE_SERVICE_ROLE_KEY']
+GAMMA_API = "https://gamma-api.polymarket.com/markets"
 
 def insert_to_supabase(payload):
     res = requests.post(
@@ -23,54 +22,50 @@ def insert_to_supabase(payload):
         print("⚠️", res.text)
 
 def fetch_polymarket():
-    print("📡 Fetching Polymarket markets from REST API...")
+    print("📡 Fetching Polymarket markets from Gamma API...")
+    limit = 100
+    offset = 0
     all_markets = []
-    page = 0
-    per_page = 100
 
     while True:
-        params = {
-            "_limit": per_page,
-            "_start": page * per_page
-        }
-        res = requests.get(POLYMARKET_API, params=params)
+        res = requests.get(GAMMA_API, params={"limit": limit, "offset": offset})
         res.raise_for_status()
-        markets = res.json()
-
-        if not markets:
+        batch = res.json()
+        if not batch:
             break
-
-        all_markets.extend(markets)
-        print(f"🔄 Page {page + 1}: Retrieved {len(markets)} markets")
-        page += 1
+        all_markets.extend(batch)
+        print(f"🔄 Retrieved {len(batch)} markets (offset {offset})")
+        offset += limit
 
     print(f"🔍 Total markets retrieved: {len(all_markets)}")
 
     payload = []
+
     for market in all_markets:
-        outcomes = market.get("outcomes", [])
         try:
-            prices = [float(outcome.get("price", 0)) for outcome in outcomes if outcome.get("price") is not None]
-            prob = round(prices[0], 4) if prices else None
+            prices = list(map(float, eval(market.get("outcomePrices", "[]"))))
+            if not prices:
+                continue
+            avg_price = sum(prices) / len(prices)
         except Exception as e:
             print(f"⚠️ Skipping market {market.get('id')} due to price error: {e}")
             continue
 
         payload.append({
-            "market_id": market.get("id", ""),
+            "market_id": market.get("id"),
             "market_name": market.get("title", ""),
             "market_description": market.get("description", None),
             "event_name": "Polymarket",
             "event_ticker": None,
-            "price": prob,
+            "price": round(avg_price, 4),
             "yes_bid": None,
             "no_bid": None,
-            "volume": float(market.get("volume", 0)),
+            "volume": float(market.get("volumeUsd", 0)),  # USD volume
             "liquidity": float(market.get("liquidity", 0)),
             "status": market.get("status", "unknown"),
-            "expiration": market.get("end_date", None),
-            "tags": market.get("tags", []),
-            "source": "polymarket_rest",
+            "expiration": market.get("endDate"),
+            "tags": market.get("categories", []),
+            "source": "polymarket_gamma",
             "timestamp": datetime.utcnow().isoformat() + "Z"
         })
 
