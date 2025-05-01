@@ -23,10 +23,10 @@ def insert_to_supabase(payload):
 
 def fetch_polymarket():
     print("📡 Fetching Polymarket markets from GraphQL...")
-    
+
     query = """
     {
-      markets(first: 1000, orderBy: volume, orderDirection: desc, where: {status: "ACTIVE"}) {
+      markets(first: 1000, orderBy: volume, orderDirection: desc) {
         id
         question
         volume
@@ -69,7 +69,7 @@ def fetch_polymarket():
             "no_bid": None,
             "volume": float(market.get("volume", 0)),
             "liquidity": None,
-            "status": "active",
+            "status": "unknown",
             "expiration": market.get("endTime"),
             "tags": ["polymarket"],
             "source": "polymarket_graphql",
@@ -81,3 +81,4 @@ def fetch_polymarket():
 
 if __name__ == "__main__":
     fetch_polymarket()
+
