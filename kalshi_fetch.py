@@ -30,7 +30,17 @@ def fetch_events():
     res = requests.get(KALSHI_EVENTS_API, headers=HEADERS)
     res.raise_for_status()
     events = res.json().get("events", [])
-    return {event["ticker"]: event for event in events}
+
+    event_dict = {}
+    for event in events:
+        ticker = event.get("ticker")
+        if ticker:
+            event_dict[ticker] = event
+        else:
+            print(f"⚠️ Skipping event with no ticker: {event}")
+
+    print(f"📂 Loaded {len(event_dict)} valid events")
+    return event_dict
 
 def fetch_kalshi():
     print("📡 Fetching Kalshi markets...")
@@ -49,9 +59,9 @@ def fetch_kalshi():
         no_bid = market.get("no_bid")
         if yes_bid is None or no_bid is None:
             continue
-        prob = (yes_bid + (1 - no_bid)) / 2
 
-        event_ticker = market.get("event_ticker") or ""
+        prob = (yes_bid + (1 - no_bid)) / 2
+        event_ticker = market.get("event_ticker", "")
         event = events.get(event_ticker, {})
         event_name = event.get("title", "") if event else ""
 
