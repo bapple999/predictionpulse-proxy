@@ -42,7 +42,6 @@ def fetch_events():
     print(f"📂 Loaded {len(event_dict)} valid events")
     return event_dict
 
-
 def fetch_kalshi():
     print("📡 Fetching Kalshi markets...")
     res = requests.get(KALSHI_MARKETS_API, headers=HEADERS, params={"limit": 1000})
@@ -62,7 +61,7 @@ def fetch_kalshi():
             continue
 
         prob = (yes_bid + (1 - no_bid)) / 2
-        event_ticker = market.get("event_ticker", "")
+        event_ticker = market.get("event_ticker") or ""
         event = events.get(event_ticker, {})
         event_name = event.get("title", "") if event else ""
 
