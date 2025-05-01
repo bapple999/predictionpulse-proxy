@@ -4,7 +4,7 @@ from datetime import datetime
 
 SUPABASE_URL = os.environ['SUPABASE_URL']
 SUPABASE_KEY = os.environ['SUPABASE_SERVICE_ROLE_KEY']
-GAMMA_API = "https://gamma-api.polymarket.com/markets"
+GRAPHQL_ENDPOINT = "https://api.thegraph.com/subgraphs/name/Polymarket/polymarket"
 
 def insert_to_supabase(payload):
     res = requests.post(
@@ -22,42 +22,57 @@ def insert_to_supabase(payload):
         print("⚠️", res.text)
 
 def fetch_polymarket():
-    print("📡 Fetching Polymarket markets...")
-    response = requests.get(GAMMA_API)
-    response.raise_for_status()
-    markets = response.json()
+    print("📡 Fetching Polymarket markets from GraphQL...")
+    
+    query = """
+    {
+      markets(first: 1000, orderBy: volume, orderDirection: desc, where: {status: "ACTIVE"}) {
+        id
+        question
+        volume
+        endTime
+        outcomes {
+          name
+          price
+        }
+      }
+    }
+    """
+
+    res = requests.post(GRAPHQL_ENDPOINT, json={"query": query})
+    res.raise_for_status()
+    data = res.json()
+    markets = data.get("data", {}).get("markets", [])
     print(f"🔍 Retrieved {len(markets)} markets")
 
     payload = []
 
     for market in markets:
+        outcomes = market.get("outcomes", [])
         try:
-            prices_raw = market.get("outcomePrices")
-            prices = list(map(float, eval(prices_raw)))  # e.g. '["0.55", "0.45"]'
+            prices = [float(o["price"]) for o in outcomes if o.get("price") is not None]
+            if not prices:
+                continue
+            avg_price = sum(prices) / len(prices)
         except Exception as e:
-            print(f"⚠️ Skipping market {market.get('id')}: {e}")
+            print(f"⚠️ Skipping market {market['id']} due to price error: {e}")
             continue
-
-        if not prices:
-            continue
-
-        avg_price = sum(prices) / len(prices)
 
         payload.append({
             "market_id": market.get("id", ""),
-            "market_name": market.get("title", ""),
-            "market_description": market.get("description", ""),
-            "event_name": market.get("category", "Unknown"),
-            "event_ticker": None,  # Polymarket doesn't use this concept
+            "market_name": market.get("question", ""),
+            "market_description": None,
+            "event_name": "Polymarket",
+            "event_ticker": None,
             "price": round(avg_price, 4),
             "yes_bid": None,
             "no_bid": None,
-            "volume": float(market.get("volumeClob", 0)),
-            "liquidity": float(market.get("liquidity", 0)),
-            "status": market.get("status", "unknown"),
-            "expiration": market.get("endDate"),
-            "tags": [market.get("category")] if market.get("category") else [],
-            "source": "polymarket",
+            "volume": float(market.get("volume", 0)),
+            "liquidity": None,
+            "status": "active",
+            "expiration": market.get("endTime"),
+            "tags": ["polymarket"],
+            "source": "polymarket_graphql",
             "timestamp": datetime.utcnow().isoformat()
         })
 
