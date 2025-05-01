@@ -22,33 +22,48 @@ def insert_to_supabase(payload):
         print("⚠️", res.text)
 
 def fetch_polymarket():
+    print("📡 Fetching Polymarket markets...")
     response = requests.get(GAMMA_API)
     response.raise_for_status()
     markets = response.json()
+    print(f"🔍 Retrieved {len(markets)} markets")
 
-    cleaned = []
+    payload = []
 
     for market in markets:
-        prices_raw = market.get("outcomePrices")
         try:
+            prices_raw = market.get("outcomePrices")
             prices = list(map(float, eval(prices_raw)))  # Convert from string like '["0.5", "0.5"]'
         except Exception as e:
-            print(f"⚠️ Skipping bad market {market.get('id')}: {e}")
+            print(f"⚠️ Skipping market {market.get('id')}: {e}")
             continue
 
         if not prices:
             continue
 
         avg_price = sum(prices) / len(prices)
-        cleaned.append({
+
+        payload.append({
             "market_id": market.get("id"),
+            "market_name": market.get("title", ""),
+            "market_description": market.get("description", ""),
+            "event_name": market.get("category", ""),  # not a true event, but serves that role
+            "event_ticker": None,  # Polymarket doesn’t use this
             "price": round(avg_price, 4),
+            "yes_bid": None,
+            "no_bid": None,
             "volume": float(market.get("volumeClob", 0)),
+            "liquidity": float(market.get("liquidity", 0)),
+            "status": market.get("status"),
+            "expiration": market.get("endDate"),
+            "tags": [market.get("category")] if market.get("category") else [],
             "source": "polymarket",
             "timestamp": datetime.utcnow().isoformat()
         })
 
-    insert_to_supabase(cleaned)
+    print(f"📦 Prepared {len(payload)} market entries for Supabase")
+    insert_to_supabase(payload)
 
 if __name__ == "__main__":
     fetch_polymarket()
+
