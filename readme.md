@@ -1,83 +1,71 @@
-# 🧠 Prediction Pulse
+# Prediction Pulse Ingestion Jobs
 
-A real-time prediction market dashboard powered by Kalshi + Polymarket. Built to monitor top markets, volume, and 24h price changes — just like a CoinMarketCap for prediction markets.
-
----
-
-## 🚀 Live Features
-- 🔁 Real-time Kalshi market updates via WebSocket
-- 🔄 5-minute polling for Polymarket via The Graph
-- 📊 In-memory tracking of all markets and 24h % changes
-- 🔌 FastAPI backend serving `/markets/live` and `/markets/movers`
+This project uses GitHub Actions to run two types of ingestion scripts for each data source (Polymarket and Kalshi):
 
 ---
 
-## 📁 Project Structure
+## 🔁 Script Structure
 
-```
-predictionpulse/
-├── api.py                 # FastAPI server
-├── kalshi_ws_live.py      # Kalshi WebSocket listener
-├── polymarket_fetch.py    # Polymarket GraphQL polling script
-├── data_store.py          # In-memory store for live and 24h data
-├── requirements.txt       # Python dependencies
-└── render.yaml            # Render deployment blueprint
-```
+### Polymarket
 
----
+| Script                        | Purpose                                 | Frequency        |
+| ----------------------------- | --------------------------------------- | ---------------- |
+| `polymarket_fetch.py`         | Fetches full metadata, prices, outcomes | Daily @ 5:00 UTC |
+| `polymarket_update_prices.py` | Updates prices and volumes only         | Every 5 minutes  |
 
-## ✅ Requirements
-- Python 3.8+
-- Environment variables:
-  - `KALSHI_API_KEY`
-  - `KALSHI_API_SECRET`
+### Kalshi
+
+| Script                    | Purpose                            | Frequency        |
+| ------------------------- | ---------------------------------- | ---------------- |
+| `kalshi_fetch.py`         | Fetches full metadata + event info | Daily @ 5:00 UTC |
+| `kalshi_update_prices.py` | Updates prices and outcomes only   | Every 5 minutes  |
 
 ---
 
-## 🔧 Local Development
-```bash
-pip install -r requirements.txt
+## ⚙️ GitHub Action Workflows
 
-# Run FastAPI server
-uvicorn api:app --reload
+### `.github/workflows/polymarket.yml`
 
-# Run Kalshi listener (in another terminal)
-python kalshi_ws_live.py
+Runs:
 
-# Poll Polymarket manually
-python polymarket_fetch.py
-```
+* `polymarket_fetch.py` daily
+* `polymarket_update_prices.py` every 5 minutes
 
----
+### `.github/workflows/kalshi.yml`
 
-## 🛰 Deployment (Render)
-This project uses **Render Blueprint (render.yaml)** to deploy:
-- 🌐 FastAPI Web API (`/markets/live`, `/markets/movers`)
-- 🔁 Background worker (Kalshi WebSocket)
-- ⏱ 5-minute cron (Polymarket polling)
+Runs:
 
-1. Push this repo to GitHub
-2. Go to [Render > New Blueprint](https://dashboard.render.com/blueprint)
-3. Paste the repo link
-4. Add your Kalshi API key + secret as environment variables
-5. Deploy 🚀
+* `kalshi_fetch.py` daily
+* `kalshi_update_prices.py` every 5 minutes
+
+All workflows:
+
+* Use `python-version: 3.11`
+* Run `pip install -r requirements.txt`
+* Inject secrets:
+
+  * `SUPABASE_URL`
+  * `SUPABASE_SERVICE_ROLE_KEY`
+  * `KALSHI_API_KEY` (Kalshi only)
 
 ---
 
-## 📬 API Endpoints
-```http
-GET /markets/live       # All current tracked markets
-GET /markets/movers     # Top 10 markets by 24h % change
-```
+## ✅ Supabase Tables
+
+| Table              | Source Data                    |
+| ------------------ | ------------------------------ |
+| `markets`          | Full market metadata           |
+| `market_snapshots` | Price + liquidity over time    |
+| `market_outcomes`  | Outcome-level pricing (Yes/No) |
 
 ---
 
-## 🧱 Next Ideas
-- Add Supabase for historical charts
-- Add frontend with Framer or React
-- Add alerts + email summaries for biggest movers
+## 📌 Tips
+
+* Use `workflow_dispatch` for manual runs.
+* Keep long fetches (e.g. Polymarket pagination) in the daily jobs.
+* Use short lightweight price-only jobs for frequent updates.
 
 ---
 
-## 👋 Credits
-Built by @bapple — inspired by prediction markets, CMC, and the future of market intelligence.
+For help or to expand the structure (alerts, summaries, etc), check the `scripts/` folder or ask in `/docs/dev-notes.md`.
