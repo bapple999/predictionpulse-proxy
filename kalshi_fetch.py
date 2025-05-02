@@ -57,10 +57,16 @@ def fetch_kalshi():
     for market in sorted_markets:
         yes_bid = market.get("yes_bid")
         no_bid = market.get("no_bid")
-        if yes_bid is None or no_bid is None:
+        last_price = market.get("last_price")
+
+        if yes_bid is not None and no_bid is not None:
+            prob = (yes_bid + (1 - no_bid)) / 2
+        elif last_price is not None:
+            prob = last_price
+        else:
+            print(f"⚠️ Skipping {market.get('ticker')} — no price data")
             continue
 
-        prob = (yes_bid + (1 - no_bid)) / 2
         event_ticker = market.get("event_ticker") or ""
         event = events.get(event_ticker, {})
         event_name = event.get("title", "") if event else ""
