@@ -8,17 +8,20 @@ on:
 
 jobs:
   full-fetch:
-    if: github.event.schedule == '0 5 * * *'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: 3.11
+
       - name: Install dependencies
         run: pip install -r requirements.txt
+
       - name: Run Kalshi Full Fetch
+        if: ${{ github.event.schedule == '0 5 * * *' }}
         env:
           KALSHI_API_KEY: ${{ secrets.KALSHI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -26,17 +29,20 @@ jobs:
         run: python kalshi_fetch.py
 
   update-prices:
-    if: github.event.schedule == '*/5 * * * *'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: 3.11
+
       - name: Install dependencies
         run: pip install -r requirements.txt
+
       - name: Run Kalshi Price Update
+        if: ${{ github.event.schedule == '*/5 * * * *' }}
         env:
           KALSHI_API_KEY: ${{ secrets.KALSHI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
