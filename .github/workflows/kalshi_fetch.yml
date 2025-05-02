@@ -1,28 +1,44 @@
-name: Kalshi Fetch Cron
+name: Kalshi Jobs
 
 on:
   schedule:
-    - cron: '*/5 * * * *'  # every 5 minutes
+    - cron: '0 5 * * *'     # daily full fetch
+    - cron: '*/5 * * * *'   # every 5 minutes price update
   workflow_dispatch:
 
 jobs:
-  fetch:
+  full-fetch:
+    if: github.event.schedule == '0 5 * * *'
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v3
-
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: 3.11
-
       - name: Install dependencies
         run: pip install -r requirements.txt
-
-      - name: Run Kalshi Fetch
+      - name: Run Kalshi Full Fetch
         env:
           KALSHI_API_KEY: ${{ secrets.KALSHI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: python kalshi_fetch.py
+
+  update-prices:
+    if: github.event.schedule == '*/5 * * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run Kalshi Price Update
+        env:
+          KALSHI_API_KEY: ${{ secrets.KALSHI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python kalshi_update_prices.py
