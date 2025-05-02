@@ -22,8 +22,8 @@ def insert_to_supabase(payload):
     if res.status_code != 201:
         print("⚠️", res.text)
 
-def fetch_polymarket():
-    print("📡 Fetching Polymarket markets from Gamma API...")
+def fetch_all_polymarket():
+    print("📡 Fetching Polymarket markets from Gamma API with pagination...")
     limit = 100
     offset = 0
     all_markets = []
@@ -44,8 +44,12 @@ def fetch_polymarket():
         time.sleep(0.1)
 
     print(f"📦 Total markets fetched: {len(all_markets)}")
+    return all_markets
 
+def fetch_polymarket():
+    all_markets = fetch_all_polymarket()
     now = datetime.utcnow().isoformat()
+
     valid_markets = []
     for m in all_markets:
         try:
@@ -53,12 +57,11 @@ def fetch_polymarket():
                 continue
             if float(m.get("volumeUsd", 0)) <= 0:
                 continue
+            valid_markets.append(m)
         except Exception:
             continue
-        valid_markets.append(m)
 
     print(f"✅ Valid markets after filters: {len(valid_markets)}")
-
     sorted_markets = sorted(valid_markets, key=lambda m: float(m.get("volumeUsd", 0)), reverse=True)
     top_markets = sorted_markets[:1000]
 
@@ -74,7 +77,7 @@ def fetch_polymarket():
             payload.append({
                 "market_id": market.get("id"),
                 "market_name": market.get("title") or market.get("slug") or market.get("id"),
-                "market_description": market.get("description") or "",  
+                "market_description": market.get("description") or "",
                 "event_name": market.get("categories", ["Polymarket"])[0],
                 "event_ticker": None,
                 "price": round(price, 4),
