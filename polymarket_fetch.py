@@ -52,7 +52,10 @@ def fetch_polymarket():
     print(f"📦 Total markets fetched: {len(all_markets)}")
 
     now = datetime.utcnow().isoformat()
-    filtered = [m for m in all_markets if m.get("endDate") > now and float(m.get("volumeUsd", 0)) > 0]
+    filtered = [
+        m for m in all_markets
+        if m.get("endDate") and m.get("endDate") > now and float(m.get("volumeUsd") or 0) > 0
+    ]
     sorted_markets = sorted(filtered, key=lambda m: float(m.get("volumeUsd", 0)), reverse=True)
     top_markets = sorted_markets[:1000]
 
