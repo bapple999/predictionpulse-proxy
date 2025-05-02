@@ -7,7 +7,6 @@ SUPABASE_URL = os.environ['SUPABASE_URL']
 SUPABASE_KEY = os.environ['SUPABASE_SERVICE_ROLE_KEY']
 GAMMA_API = "https://gamma-api.polymarket.com/markets"
 
-
 def insert_to_supabase(payload):
     res = requests.post(
         f"{SUPABASE_URL}/rest/v1/market_snapshots",
@@ -22,7 +21,6 @@ def insert_to_supabase(payload):
     print(f"✅ Supabase insert status: {res.status_code}")
     if res.status_code != 201:
         print("⚠️", res.text)
-
 
 def fetch_polymarket():
     print("📡 Fetching Polymarket markets from Gamma API...")
@@ -43,7 +41,7 @@ def fetch_polymarket():
         all_markets.extend(batch)
         print(f"🔄 Retrieved {len(batch)} markets (offset {offset})")
         offset += limit
-        time.sleep(0.25)
+        time.sleep(0.1)
 
     print(f"📦 Total markets fetched: {len(all_markets)}")
 
@@ -51,16 +49,9 @@ def fetch_polymarket():
     valid_markets = []
     for m in all_markets:
         try:
-            if m.get("state") != "active":
-                continue
             if not m.get("endDate") or m["endDate"] <= now:
                 continue
-            if float(m.get("volumeUsd", 0)) < 100:
-                continue
-            if float(m.get("liquidity", 0)) < 50:
-                continue
-            prices = m.get("outcomePrices")
-            if not isinstance(prices, list) or not prices or prices[0] in (0.5, 0):
+            if float(m.get("volumeUsd", 0)) <= 0:
                 continue
         except Exception:
             continue
@@ -76,13 +67,14 @@ def fetch_polymarket():
         try:
             prices = market.get("outcomePrices")
             if not isinstance(prices, list) or not prices:
-                continue
-            price = float(prices[0])
+                price = 0.5
+            else:
+                price = float(prices[0])
 
             payload.append({
                 "market_id": market.get("id"),
                 "market_name": market.get("title") or market.get("slug") or market.get("id"),
-                "market_description": market.get("description", None),
+                "market_description": market.get("description") or "",  
                 "event_name": market.get("categories", ["Polymarket"])[0],
                 "event_ticker": None,
                 "price": round(price, 4),
@@ -96,12 +88,12 @@ def fetch_polymarket():
                 "source": "polymarket_gamma",
                 "timestamp": datetime.utcnow().isoformat() + "Z"
             })
-        except Exception:
+        except Exception as e:
+            print(f"⚠️ Error processing market {market.get('id')}: {e}")
             continue
 
     print(f"🚀 Prepared {len(payload)} entries for Supabase insert")
     insert_to_supabase(payload)
-
 
 if __name__ == "__main__":
     fetch_polymarket()
