@@ -36,9 +36,6 @@ def fetch_events():
         ticker = event.get("ticker") or event.get("event_ticker")
         if ticker:
             event_dict[ticker] = event
-        else:
-            print(f"⚠️ Skipping event with no ticker: {event}")
-
     print(f"📂 Loaded {len(event_dict)} valid events")
     return event_dict
 
@@ -51,56 +48,53 @@ def fetch_kalshi():
 
     events = fetch_events()
     now = datetime.utcnow().isoformat()
-    markets_with_data = []
-
+    valid_markets = []
     for market in markets:
-        # Filter: must not be expired
-        if not market.get("expiration") or market["expiration"] <= now:
+        try:
+            if not market.get("expiration") or market["expiration"] <= now:
+                continue
+            if float(market.get("volume", 0)) <= 0:
+                continue
+        except Exception:
             continue
-        # Filter: skip if inactive
-        if market.get("status") not in ("active", "open"):
-            continue
-        # Filter: must have valid price
-        yes_bid = market.get("yes_bid")
-        no_bid = market.get("no_bid")
-        last_price = market.get("last_price")
+        valid_markets.append(market)
 
-        if yes_bid is not None and no_bid is not None:
-            prob = (yes_bid + (1 - no_bid)) / 2
-        elif last_price is not None:
-            prob = last_price
-        else:
-            continue
-
-        markets_with_data.append((market, prob))
-
-    print(f"✅ Valid markets after filters: {len(markets_with_data)}")
-
-    sorted_markets = sorted(markets_with_data, key=lambda x: x[0].get("volume", 0), reverse=True)[:1000]
+    print(f"✅ Valid markets after filters: {len(valid_markets)}")
+    sorted_markets = sorted(valid_markets, key=lambda m: float(m.get("volume", 0)), reverse=True)[:1000]
 
     payload = []
-    for market, prob in sorted_markets:
-        event_ticker = market.get("event_ticker") or ""
-        event = events.get(event_ticker, {})
-        event_name = event.get("title") or event_ticker or "Kalshi"
+    for market in sorted_markets:
+        try:
+            yes_bid = market.get("yes_bid")
+            no_bid = market.get("no_bid")
+            if yes_bid is not None and no_bid is not None:
+                price = (yes_bid + (1 - no_bid)) / 2
+            else:
+                price = 0.5
 
-        payload.append({
-            "market_id": market.get("ticker", ""),
-            "market_name": market.get("title") or market.get("ticker"),
-            "market_description": market.get("description", None),
-            "event_name": event_name,
-            "event_ticker": event_ticker,
-            "price": round(prob, 4),
-            "yes_bid": market.get("yes_bid"),
-            "no_bid": market.get("no_bid"),
-            "volume": market.get("volume", 0),
-            "liquidity": market.get("open_interest", 0),
-            "status": market.get("status", "unknown"),
-            "expiration": market.get("expiration"),
-            "tags": market.get("tags") if isinstance(market.get("tags"), list) else [],
-            "source": "kalshi_rest",
-            "timestamp": datetime.utcnow().isoformat() + "Z"
-        })
+            event_ticker = market.get("event_ticker") or ""
+            event = events.get(event_ticker, {})
+
+            payload.append({
+                "market_id": market.get("ticker", ""),
+                "market_name": market.get("title", ""),
+                "market_description": market.get("description", ""),
+                "event_name": event.get("title", ""),
+                "event_ticker": event_ticker,
+                "price": round(price, 4),
+                "yes_bid": yes_bid,
+                "no_bid": no_bid,
+                "volume": float(market.get("volume", 0)),
+                "liquidity": float(market.get("open_interest", 0)),
+                "status": market.get("status", "unknown"),
+                "expiration": market.get("expiration"),
+                "tags": market.get("tags") if isinstance(market.get("tags"), list) else [],
+                "source": "kalshi_rest",
+                "timestamp": datetime.utcnow().isoformat()
+            })
+        except Exception as e:
+            print(f"⚠️ Error processing market {market.get('ticker')}: {e}")
+            continue
 
     print(f"🚀 Prepared {len(payload)} entries for Supabase insert")
     insert_to_supabase(payload)
