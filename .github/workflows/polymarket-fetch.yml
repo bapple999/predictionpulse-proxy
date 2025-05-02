@@ -1,10 +1,10 @@
-# .github/workflows/polymarket.yml
 name: Polymarket Jobs
 
 on:
   schedule:
-    - cron: '0 5 * * *'   # daily full fetch
-    - cron: '*/5 * * * *' # every 5 min price update
+    - cron: '0 5 * * *'     # daily full fetch
+    - cron: '*/5 * * * *'   # every 5 minutes price update
+  workflow_dispatch:
 
 jobs:
   full-fetch:
@@ -12,7 +12,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - name: Run Full Polymarket Fetch
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Polymarket Full Fetch
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: python polymarket_fetch.py
 
   update-prices:
@@ -20,5 +32,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
       - name: Run Polymarket Price Update
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: python polymarket_update_prices.py
