@@ -7,6 +7,7 @@ SUPABASE_URL = os.environ['SUPABASE_URL']
 SUPABASE_KEY = os.environ['SUPABASE_SERVICE_ROLE_KEY']
 GAMMA_API = "https://gamma-api.polymarket.com/markets"
 
+
 def insert_to_supabase(payload):
     res = requests.post(
         f"{SUPABASE_URL}/rest/v1/market_snapshots",
@@ -21,6 +22,7 @@ def insert_to_supabase(payload):
     print(f"✅ Supabase insert status: {res.status_code}")
     if res.status_code != 201:
         print("⚠️", res.text)
+
 
 def fetch_polymarket():
     print("📡 Fetching Polymarket markets from Gamma API...")
@@ -41,62 +43,65 @@ def fetch_polymarket():
         all_markets.extend(batch)
         print(f"🔄 Retrieved {len(batch)} markets (offset {offset})")
         offset += limit
-        time.sleep(0.25)  # reduce API strain
+        time.sleep(0.25)
 
     print(f"📦 Total markets fetched: {len(all_markets)}")
 
-    # Filter: future expiration, volume > 1000, outcome prices not flat 0.5s
     now = datetime.utcnow().isoformat()
     valid_markets = []
     for m in all_markets:
         try:
+            if m.get("state") != "active":
+                continue
             if not m.get("endDate") or m["endDate"] <= now:
                 continue
-            if float(m.get("volumeUsd") or 0) < 1000:
+            if float(m.get("volumeUsd", 0)) < 100:
                 continue
-            prices = list(map(float, eval(m.get("outcomePrices", "[]"))))
-            if all(round(p, 2) == 0.5 for p in prices):
+            if float(m.get("liquidity", 0)) < 50:
                 continue
-        except Exception as e:
+            prices = m.get("outcomePrices")
+            if not isinstance(prices, list) or not prices or prices[0] in (0.5, 0):
+                continue
+        except Exception:
             continue
         valid_markets.append(m)
 
     print(f"✅ Valid markets after filters: {len(valid_markets)}")
 
-    # Sort by volume
-    sorted_markets = sorted(valid_markets, key=lambda m: float(m.get("volumeUsd") or 0), reverse=True)
+    sorted_markets = sorted(valid_markets, key=lambda m: float(m.get("volumeUsd", 0)), reverse=True)
     top_markets = sorted_markets[:1000]
 
     payload = []
     for market in top_markets:
         try:
-            prices = list(map(float, eval(market.get("outcomePrices", "[]"))))
-            if not prices:
+            prices = market.get("outcomePrices")
+            if not isinstance(prices, list) or not prices:
                 continue
-            avg_price = sum(prices) / len(prices)
-        except Exception as e:
-            continue
+            price = float(prices[0])
 
-        payload.append({
-            "market_id": market.get("id"),
-            "market_name": market.get("title") or market.get("slug", ""),
-            "market_description": None,
-            "event_name": "Polymarket",
-            "event_ticker": None,
-            "price": round(avg_price, 4),
-            "yes_bid": None,
-            "no_bid": None,
-            "volume": float(market.get("volumeUsd", 0)),
-            "liquidity": float(market.get("liquidity", 0)),
-            "status": "active",  # Gamma has no status field
-            "expiration": market.get("endDate"),
-            "tags": market.get("categories", ["polymarket"]),
-            "source": "polymarket_gamma",
-            "timestamp": datetime.utcnow().isoformat() + "Z"
-        })
+            payload.append({
+                "market_id": market.get("id"),
+                "market_name": market.get("title") or market.get("slug") or market.get("id"),
+                "market_description": market.get("description", None),
+                "event_name": market.get("categories", ["Polymarket"])[0],
+                "event_ticker": None,
+                "price": round(price, 4),
+                "yes_bid": None,
+                "no_bid": None,
+                "volume": float(market.get("volumeUsd", 0)),
+                "liquidity": float(market.get("liquidity", 0)),
+                "status": market.get("state", "unknown"),
+                "expiration": market.get("endDate"),
+                "tags": market.get("categories", ["Polymarket"]),
+                "source": "polymarket_gamma",
+                "timestamp": datetime.utcnow().isoformat() + "Z"
+            })
+        except Exception:
+            continue
 
     print(f"🚀 Prepared {len(payload)} entries for Supabase insert")
     insert_to_supabase(payload)
+
 
 if __name__ == "__main__":
     fetch_polymarket()
