@@ -50,11 +50,17 @@ def fetch_kalshi():
     print(f"🔍 Retrieved {len(markets)} markets")
 
     events = fetch_events()
-    markets_with_volume = [m for m in markets if m.get("volume")]
-    sorted_markets = sorted(markets_with_volume, key=lambda m: m["volume"], reverse=True)[:100]
+    now = datetime.utcnow().isoformat()
+    markets_with_data = []
 
-    payload = []
-    for market in sorted_markets:
+    for market in markets:
+        # Filter: must not be expired
+        if not market.get("expiration") or market["expiration"] <= now:
+            continue
+        # Filter: skip if inactive
+        if market.get("status") not in ("active", "open"):
+            continue
+        # Filter: must have valid price
         yes_bid = market.get("yes_bid")
         no_bid = market.get("no_bid")
         last_price = market.get("last_price")
@@ -64,32 +70,39 @@ def fetch_kalshi():
         elif last_price is not None:
             prob = last_price
         else:
-            print(f"⚠️ Skipping {market.get('ticker')} — no price data")
             continue
 
+        markets_with_data.append((market, prob))
+
+    print(f"✅ Valid markets after filters: {len(markets_with_data)}")
+
+    sorted_markets = sorted(markets_with_data, key=lambda x: x[0].get("volume", 0), reverse=True)[:1000]
+
+    payload = []
+    for market, prob in sorted_markets:
         event_ticker = market.get("event_ticker") or ""
         event = events.get(event_ticker, {})
-        event_name = event.get("title", "") if event else ""
+        event_name = event.get("title") or event_ticker or "Kalshi"
 
         payload.append({
             "market_id": market.get("ticker", ""),
-            "market_name": market.get("title", ""),
-            "market_description": market.get("description", ""),
+            "market_name": market.get("title") or market.get("ticker"),
+            "market_description": market.get("description", None),
             "event_name": event_name,
             "event_ticker": event_ticker,
             "price": round(prob, 4),
-            "yes_bid": yes_bid,
-            "no_bid": no_bid,
+            "yes_bid": market.get("yes_bid"),
+            "no_bid": market.get("no_bid"),
             "volume": market.get("volume", 0),
             "liquidity": market.get("open_interest", 0),
             "status": market.get("status", "unknown"),
             "expiration": market.get("expiration"),
             "tags": market.get("tags") if isinstance(market.get("tags"), list) else [],
             "source": "kalshi_rest",
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat() + "Z"
         })
 
-    print(f"📦 Prepared {len(payload)} market entries for Supabase")
+    print(f"🚀 Prepared {len(payload)} entries for Supabase insert")
     insert_to_supabase(payload)
 
 if __name__ == "__main__":
