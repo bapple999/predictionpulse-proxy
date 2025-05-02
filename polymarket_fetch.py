@@ -33,8 +33,9 @@ def fetch_polymarket():
     limit = 100
     offset = 0
     all_markets = []
+    MAX_MARKETS = 20000
 
-    while True:
+    while offset < MAX_MARKETS:
         res = requests.get(GAMMA_API, params={"limit": limit, "offset": offset})
         if res.status_code == 429:
             print("⏳ Rate limited. Sleeping 10 seconds...")
