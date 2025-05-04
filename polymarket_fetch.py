@@ -1,4 +1,4 @@
-# polymarket_fetch.py  – full Polymarket metadata load + first snapshot
+# polymarket_fetch.py  – full Polymarket metadata + first snapshot
 import requests, time, json, itertools
 from datetime import datetime
 from common import insert_to_supabase          # shared helper
@@ -43,33 +43,21 @@ def fetch_clob(mid):
 def main():
     gamma = fetch_gamma_markets()
 
-    # ── diagnostic sample (first 3 markets) ─────────────
+    # sample dump – keep until you’re happy, then delete
     print("🧪 First raw market from Gamma ↓", flush=True)
     for sample in itertools.islice(gamma, 0, 3):
         print(json.dumps(sample, indent=2)[:800], flush=True)
-    # ----------------------------------------------------
 
     now_iso = datetime.utcnow().isoformat()
 
+    # NEW: only check that end date is still in the future
     def is_live(m):
-        state       = (get_field(m, "status", "state", default="")).upper()
-        status_ok   = state in ("TRADING", "OPEN", "ACTIVE")
-        end_time    = get_field(m, "endTime", "end_time", default="9999")
-        still_open  = end_time > now_iso
-        vol         = get_field(
-            m, "volumeUsd24h", "volumeUSD24h", "volumeUSD", "totalVolumeUSD", default=0
-        )
-        vol_ok      = float(vol) > 0
-        return status_ok and still_open and vol_ok
+        end_date = get_field(m, "endDate", "endTime", "end_time", default="1970")
+        return end_date > now_iso
 
+    # filter + simple slice (no volume sort since absent)
     live = [m for m in gamma if is_live(m)]
-    top  = sorted(
-        live,
-        key=lambda m: float(
-            get_field(m, "volumeUsd24h", "volumeUSD24h", "volumeUSD", "totalVolumeUSD", default=0)
-        ),
-        reverse=True
-    )[:1000]
+    top  = live[:1000]
     print(f"🏆 Markets kept after filter: {len(top)}", flush=True)
 
     ts = datetime.utcnow().isoformat() + "Z"
@@ -79,6 +67,7 @@ def main():
         mid = g["id"]
         clob = fetch_clob(mid)
         if not clob: continue
+
         yes = clob.get("yesPrice"); no = clob.get("noPrice")
         if yes is None or no is None: continue
         prob = (yes/100 + (1 - no/100)) / 2
@@ -88,7 +77,7 @@ def main():
             "market_name": get_field(g, "title", "slug", default=""),
             "description": g.get("description"),
             "tags":        g.get("categories", []),
-            "expiration":  get_field(g, "endTime", "end_time"),
+            "expiration":  get_field(g, "endDate", "endTime", "end_time"),
             "source":      "polymarket",
             "status":      get_field(g, "status", "state"),
         })
@@ -98,7 +87,7 @@ def main():
             "price":     round(prob, 4),
             "yes_bid":   yes/100,
             "no_bid":    no/100,
-            "volume":    float(get_field(g, "volumeUsd24h", "volumeUSD", "totalVolumeUSD", default=0)),
+            "volume":    None,                     # volume not reliable in Gamma v1
             "liquidity": float(g.get("liquidity", 0)),
             "timestamp": ts,
             "source":    "polymarket_clob",
@@ -121,4 +110,3 @@ def main():
 # ────────────────────────────
 if __name__ == "__main__":
     main()
-
