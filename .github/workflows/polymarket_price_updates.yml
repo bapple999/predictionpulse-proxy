@@ -20,4 +20,4 @@ jobs:
           POLYMARKET_API_KEY:        ${{ secrets.POLYMARKET_API_KEY }}
           SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python scripts/polymarket_update_prices.py
+        run: python polymarket_update_prices.py
