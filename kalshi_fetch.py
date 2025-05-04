@@ -1,71 +1,76 @@
-# kalshi_fetch.py  ── daily full‑market load for Kalshi
+# kalshi_fetch.py  – daily (or hourly) metadata load + first snapshot for Kalshi
 import os
-import requests, time
+import requests
 from datetime import datetime
-from common import insert_to_supabase
+from common import insert_to_supabase   # shared helper in the same folder
 
-ROOT_API         = "https://api.elections.kalshi.com/trade-api/v2"
-MARKETS_ENDPOINT = f"{ROOT_API}/markets"
-EVENTS_ENDPOINT  = f"{ROOT_API}/events"
+# ─────────────────────────────────────────────────────────────
+MARKETS_ENDPOINT = "https://api.elections.kalshi.com/trade-api/v2/markets"
+EVENTS_ENDPOINT  = "https://api.elections.kalshi.com/trade-api/v2/events"
 
-HEADERS_KALSHI   = {"User-Agent": "prediction-pulse-loader"}  # public endpoints need no auth
+# Public endpoints: no auth header required
+HEADERS = {"User-Agent": "prediction-pulse-loader/1.0"}
 
-# ────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
 def fetch_events() -> dict:
-    """Return {event_ticker: event_object}, tolerate missing 'ticker' key."""
-    r = requests.get(EVENTS_ENDPOINT, timeout=15)
+    print("📡 Fetching Kalshi events…", flush=True)
+    r = requests.get(EVENTS_ENDPOINT, headers=HEADERS, timeout=15)
     r.raise_for_status()
+    events = r.json().get("events", [])
+    print(f"🔍 Retrieved {len(events)} events", flush=True)
 
-    ev_map = {}
-    for e in r.json().get("events", []):
+    out = {}
+    for e in events:
         key = e.get("ticker") or e.get("event_ticker")
         if key:
-            ev_map[key] = e
-    return ev_map
+            out[key] = e
+    return out
 
 def fetch_all_markets(limit: int = 1000) -> list:
-    """Download every market page until the API says 'no more'."""
+    print("📡 Fetching Kalshi markets (paged)…", flush=True)
     markets, offset = [], 0
     while True:
-        try:
-            r = requests.get(
-                MARKETS_ENDPOINT,
-                params={"limit": limit, "offset": offset},
-                timeout=15,
-            )
-            # 502/504 often means we've paged past the end — treat as EOF
-            if r.status_code in (502, 504):
-                break
-            r.raise_for_status()
-        except requests.exceptions.RequestException as e:
-            # log and break; avoids job crash
-            print(f"⚠️  pagination stopped at offset {offset} → {e}")
+        resp = requests.get(
+            MARKETS_ENDPOINT,
+            headers=HEADERS,
+            params={"limit": limit, "offset": offset},
+            timeout=15,
+        )
+        # Many offsets past the end return 502/504 → treat as EOF
+        if resp.status_code in (502, 504):
+            print(f"⚠️  50x at offset {offset} → assuming end of list", flush=True)
             break
+        resp.raise_for_status()
 
-        batch = r.json().get("markets", [])
+        batch = resp.json().get("markets", [])
         if not batch:
             break
+
         markets.extend(batch)
         offset += limit
+        # Heartbeat so GitHub sees output every few seconds
+        print(f"⏱  {len(batch):4} markets (offset {offset})", flush=True)
+
+    print(f"🔍 Total markets fetched: {len(markets)}", flush=True)
     return markets
 
-
-# ────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
 def main() -> None:
     events      = fetch_events()
     now_iso     = datetime.utcnow().isoformat()
     markets_raw = fetch_all_markets()
 
+    # keep only unexpired markets with non‑zero volume
     valid = [
         m for m in markets_raw
         if m.get("expiration") and m["expiration"] > now_iso
         and float(m.get("volume", 0)) > 0
     ]
-
     top = sorted(valid, key=lambda m: float(m["volume"]), reverse=True)[:1000]
-    ts  = datetime.utcnow().isoformat() + "Z"
+    print(f"🏆 Markets kept after filter: {len(top)}", flush=True)
 
-    rows_markets, rows_snaps, rows_outcomes = [], [], []
+    ts = datetime.utcnow().isoformat() + "Z"
+    rows_markets, rows_snaps, rows_outs = [], [], []
 
     for m in top:
         mid     = m["ticker"]
@@ -73,7 +78,8 @@ def main() -> None:
         no_bid  = m.get("no_bid")
         prob    = (
             (yes_bid + (1 - no_bid)) / 2
-            if yes_bid is not None and no_bid is not None else None
+            if yes_bid is not None and no_bid is not None
+            else None
         )
 
         rows_markets.append(
@@ -84,7 +90,7 @@ def main() -> None:
                 "event_name":         events.get(m.get("event_ticker"), {}).get("title"),
                 "event_ticker":       m.get("event_ticker"),
                 "expiration":         m.get("expiration"),
-                "tags":               m.get("tags", []),
+                "tags":               m.get("tags", []),   # stored as jsonb
                 "source":             "kalshi",
                 "status":             m.get("status"),
             }
@@ -104,7 +110,7 @@ def main() -> None:
         )
 
         if yes_bid is not None:
-            rows_outcomes.append(
+            rows_outs.append(
                 {
                     "market_id":   mid,
                     "outcome_name":"Yes",
@@ -115,7 +121,7 @@ def main() -> None:
                 }
             )
         if no_bid is not None:
-            rows_outcomes.append(
+            rows_outs.append(
                 {
                     "market_id":   mid,
                     "outcome_name":"No",
@@ -126,16 +132,17 @@ def main() -> None:
                 }
             )
 
+    print("💾 Writing rows to Supabase…", flush=True)
     insert_to_supabase("markets",          rows_markets)                        # upsert
     insert_to_supabase("market_snapshots", rows_snaps, conflict_key=None)      # plain insert
-    insert_to_supabase("market_outcomes",  rows_outcomes, conflict_key=None)   # plain insert
+    insert_to_supabase("market_outcomes",  rows_outs,  conflict_key=None)      # plain insert
 
-    # summary print — inside main so variables exist
     print(
         f"✅ Markets {len(rows_markets)} | "
-        f"Snapshots {len(rows_snaps)} | Outcomes {len(rows_outcomes)}"
+        f"Snapshots {len(rows_snaps)} | Outcomes {len(rows_outs)}",
+        flush=True,
     )
 
-# ────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     main()
