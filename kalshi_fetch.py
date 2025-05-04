@@ -23,20 +23,32 @@ def fetch_events() -> dict:
             ev_map[key] = e
     return ev_map
 
-def fetch_all_markets(limit: int = 1000):   # 1. bigger pages
+def fetch_all_markets(limit: int = 1000) -> list:
+    """Download every market page until the API says 'no more'."""
     markets, offset = [], 0
     while True:
-        r = requests.get(MARKETS_ENDPOINT,
-                         params={"limit": limit, "offset": offset},
-                         timeout=15)
-        r.raise_for_status()
+        try:
+            r = requests.get(
+                MARKETS_ENDPOINT,
+                params={"limit": limit, "offset": offset},
+                timeout=15,
+            )
+            # 502/504 often means we've paged past the end — treat as EOF
+            if r.status_code in (502, 504):
+                break
+            r.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            # log and break; avoids job crash
+            print(f"⚠️  pagination stopped at offset {offset} → {e}")
+            break
+
         batch = r.json().get("markets", [])
         if not batch:
             break
         markets.extend(batch)
         offset += limit
-        #   time.sleep(0.1)   ← 2. delete this pause
     return markets
+
 
 # ────────────────────────────────────────────────────────────
 def main() -> None:
