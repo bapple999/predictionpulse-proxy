@@ -1,119 +1,115 @@
+# polymarket_fetch.py  – full Polymarket metadata load + first snapshot
 import os
 import requests
 from datetime import datetime
-import time
+from common import insert_to_supabase   # shared helper
 
-SUPABASE_URL = os.environ['SUPABASE_URL']
-SUPABASE_KEY = os.environ['SUPABASE_SERVICE_ROLE_KEY']
-GAMMA_API = "https://gamma-api.polymarket.com/markets"
-CLOB_API_BASE = "https://clob.polymarket.com/markets"
+# ───────── endpoints ─────────
+GAMMA_ENDPOINT = "https://gamma-api.polymarket.com/markets"
+CLOB_ENDPOINT  = "https://clob.polymarket.com/markets/{}"
 
-HEADERS = {
-    "apikey": SUPABASE_KEY,
-    "Authorization": f"Bearer {SUPABASE_KEY}",
-    "Content-Type": "application/json",
-    "Prefer": "return=minimal"
-}
-
-def insert_to_supabase(endpoint, payload):
-    if not payload:
-        print(f"⚠️ No data to insert into {endpoint}")
-        return
-    res = requests.post(
-        f"{SUPABASE_URL}/rest/v1/{endpoint}",
-        headers=HEADERS,
-        json=payload
-    )
-    print(f"✅ Inserted into {endpoint} | Status: {res.status_code}")
-    if res.status_code != 201:
-        print("⚠️", res.text)
-
-def fetch_polymarket():
-    print("📡 Fetching Polymarket markets from Gamma API with pagination...")
-    limit = 100
-    offset = 0
-    all_markets = []
-    MAX_MARKETS = 20000
-
-    while offset < MAX_MARKETS:
-        res = requests.get(GAMMA_API, params={"limit": limit, "offset": offset})
-        if res.status_code == 429:
-            print("⏳ Rate limited. Sleeping 10 seconds...")
+# ─────────────────────────────
+def fetch_gamma_markets(limit: int = 1000, max_pages: int = 30) -> list:
+    """Paginate through the Gamma API until no rows or max_pages hit."""
+    print("📡 Fetching Polymarket markets (Gamma)…", flush=True)
+    markets, offset, pages = [], 0, 0
+    while pages < max_pages:
+        r = requests.get(GAMMA_ENDPOINT, params={"limit": limit, "offset": offset}, timeout=15)
+        if r.status_code == 429:
+            print("⏳ Rate‑limited; retrying after 10 s", flush=True)
             time.sleep(10)
             continue
-        res.raise_for_status()
-        batch = res.json()
+        r.raise_for_status()
+
+        batch = r.json()
         if not batch:
             break
-        all_markets.extend(batch)
-        print(f"🔄 Retrieved {len(batch)} markets (offset {offset})")
+
+        markets.extend(batch)
         offset += limit
-        time.sleep(0.1)
+        pages  += 1
+        print(f"⏱  {len(batch):4} markets (offset {offset})", flush=True)
+    print(f"🔍 Total markets fetched: {len(markets)}", flush=True)
+    return markets
 
-    print(f"📦 Total markets fetched: {len(all_markets)}")
+def fetch_clob(market_id: str) -> dict | None:
+    """Return CLOB JSON or None if the market isn't on CLOB (404)."""
+    r = requests.get(CLOB_ENDPOINT.format(market_id), timeout=10)
+    if r.status_code == 404:
+        return None
+    r.raise_for_status()
+    return r.json()
 
-    now = datetime.utcnow().isoformat()
-    filtered = [
-        m for m in all_markets
-        if m.get("endDate") and m.get("endDate") > now and float(m.get("volumeUsd") or 0) > 0
+# ─────────────────────────────
+def main() -> None:
+    gamma_markets = fetch_gamma_markets()
+    now_iso       = datetime.utcnow().isoformat()
+
+    # keep active markets with some USD volume
+    active = [
+        m for m in gamma_markets
+        if m.get("status") == "ACTIVE"
+        and m.get("endDate") and m["endDate"] > now_iso
+        and float(m.get("volumeUsd") or 0) > 0
     ]
-    sorted_markets = sorted(filtered, key=lambda m: float(m.get("volumeUsd", 0)), reverse=True)
-    top_markets = sorted_markets[:1000]
+    top = sorted(active, key=lambda m: float(m["volumeUsd"]), reverse=True)[:1000]
+    print(f"🏆 Markets kept after filter: {len(top)}", flush=True)
 
-    markets, snapshots, outcomes = [], [], []
-    timestamp = datetime.utcnow().isoformat() + "Z"
+    ts = datetime.utcnow().isoformat() + "Z"
+    rows_markets, rows_snaps, rows_outs = [], [], []
 
-    for m in top_markets:
-        market_id = m["id"]
+    for g in top:
+        mid = g["id"]
 
-        # Markets metadata table
-        markets.append({
-            "market_id": market_id,
-            "market_name": m.get("title") or m.get("slug", ""),
-            "description": m.get("description"),
-            "tags": m.get("categories", []),
-            "expiration": m.get("endDate"),
-            "source": "polymarket",
+        clob = fetch_clob(mid)
+        if not clob:                 # skip non‑CLOB markets (usually very old)
+            continue
+
+        yes_price = clob.get("yesPrice")
+        no_price  = clob.get("noPrice")
+        if yes_price is None or no_price is None:
+            continue
+
+        prob = (yes_price/100 + (1 - no_price/100)) / 2
+
+        # ─ metadata row
+        rows_markets.append({
+            "market_id":   mid,
+            "market_name": g.get("title") or g.get("slug"),
+            "description": g.get("description"),
+            "tags":        g.get("categories", []),
+            "expiration":  g.get("endDate"),
+            "source":      "polymarket",
+            "status":      g["status"],
         })
 
-        # Real-time snapshot
-        try:
-            clob_res = requests.get(f"{CLOB_API_BASE}/{market_id}")
-            clob_res.raise_for_status()
-            clob_data = clob_res.json()
-            clob_outcomes = clob_data.get("outcomes", [])
-        except Exception as e:
-            print(f"⚠️ CLOB error for {market_id}: {e}")
-            clob_outcomes = []
-
-        prices = [float(o["price"]) for o in clob_outcomes if o.get("price") is not None]
-        avg_price = round(sum(prices) / len(prices), 4) if prices else 0.5
-
-        snapshots.append({
-            "market_id": market_id,
-            "price": avg_price,
-            "volume": float(m.get("volumeUsd", 0)),
-            "liquidity": float(m.get("liquidity", 0)),
-            "status": "active",
-            "timestamp": timestamp,
-            "source": "polymarket_clob"
+        # ─ snapshot row
+        rows_snaps.append({
+            "market_id":  mid,
+            "price":      round(prob, 4),
+            "yes_bid":    yes_price/100,
+            "no_bid":     no_price/100,
+            "volume":     float(g.get("volumeUsd", 0)),
+            "liquidity":  float(g.get("liquidity", 0)),
+            "timestamp":  ts,
+            "source":     "polymarket_clob",
         })
 
-        for o in clob_outcomes:
-            if "name" not in o or "price" not in o:
-                continue
-            outcomes.append({
-                "market_id": market_id,
-                "outcome_name": o["name"],
-                "price": float(o["price"]),
-                "volume": float(o.get("volume", 0)),
-                "timestamp": timestamp,
-                "source": "polymarket_clob"
-            })
+        # ─ outcome rows
+        rows_outs.extend([
+            {"market_id": mid, "outcome_name": "Yes", "price": yes_price/100,
+             "volume": None, "timestamp": ts, "source": "polymarket_clob"},
+            {"market_id": mid, "outcome_name": "No",  "price": 1 - no_price/100,
+             "volume": None, "timestamp": ts, "source": "polymarket_clob"},
+        ])
 
-    insert_to_supabase("markets", markets)
-    insert_to_supabase("market_snapshots", snapshots)
-    insert_to_supabase("market_outcomes", outcomes)
+    print("💾 Writing rows to Supabase…", flush=True)
+    insert_to_supabase("markets",          rows_markets)                        # UPSERT
+    insert_to_supabase("market_snapshots", rows_snaps, conflict_key=None)      # INSERT
+    insert_to_supabase("market_outcomes",  rows_outs,  conflict_key=None)      # INSERT
 
+    print(f"✅ Done: Markets {len(rows_markets)}, Snapshots {len(rows_snaps)}, Outcomes {len(rows_outs)}", flush=True)
+
+# ─────────────────────────────
 if __name__ == "__main__":
-    fetch_polymarket()
+    main()
