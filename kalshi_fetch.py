@@ -1,139 +1,100 @@
-import os
-import requests
+import os, requests, time
 from datetime import datetime
-import time
+from scripts.common import insert_to_supabase   # adjust if your package name differs
 
-SUPABASE_URL = os.environ['SUPABASE_URL']
-SUPABASE_KEY = os.environ['SUPABASE_SERVICE_ROLE_KEY']
-KALSHI_MARKETS_API = "https://api.elections.kalshi.com/trade-api/v2/markets"
-KALSHI_EVENTS_API = "https://api.elections.kalshi.com/trade-api/v2/events"
-HEADERS = {
-    "Authorization": f"Bearer {os.environ['KALSHI_API_KEY']}"
-}
-
-def insert_to_supabase(endpoint, payload):
-    if not payload:
-        print(f"⚠️ No payload to insert for {endpoint}")
-        return
-
-    res = requests.post(
-        f"{SUPABASE_URL}/rest/v1/{endpoint}",
-        headers={
-            "apikey": SUPABASE_KEY,
-            "Authorization": f"Bearer {SUPABASE_KEY}",
-            "Content-Type": "application/json",
-            "Prefer": "return=minimal"
-        },
-        json=payload
-    )
-    print(f"✅ Supabase insert to {endpoint} status: {res.status_code}")
-    if res.status_code != 201:
-        print("⚠️", res.text)
+ROOT_API         = "https://api.elections.kalshi.com/trade-api/v2"
+MARKETS_ENDPOINT = f"{ROOT_API}/markets"
+EVENTS_ENDPOINT  = f"{ROOT_API}/events"
+HEADERS_KALSHI   = {"Authorization": f"Bearer {os.environ['KALSHI_API_KEY']}"}
 
 def fetch_events():
-    print("📡 Fetching Kalshi events...")
-    res = requests.get(KALSHI_EVENTS_API, headers=HEADERS)
-    res.raise_for_status()
-    events = res.json().get("events", [])
-    return {e["ticker"]: e for e in events if "ticker" in e}
+    r = requests.get(EVENTS_ENDPOINT, headers=HEADERS_KALSHI, timeout=15)
+    r.raise_for_status()
+    return {e["ticker"]: e for e in r.json().get("events", [])}
 
-def fetch_all_markets():
-    print("📡 Fetching all Kalshi markets with pagination...")
-    all_markets = []
-    offset = 0
-    limit = 100
-
+def fetch_all_markets(limit=100):
+    markets, offset = [], 0
     while True:
-        res = requests.get(KALSHI_MARKETS_API, headers=HEADERS, params={"limit": limit, "offset": offset})
-        res.raise_for_status()
-        batch = res.json().get("markets", [])
+        r = requests.get(MARKETS_ENDPOINT,
+                         headers=HEADERS_KALSHI,
+                         params={"limit": limit, "offset": offset},
+                         timeout=15)
+        r.raise_for_status()
+        batch = r.json().get("markets", [])
         if not batch:
             break
-        all_markets.extend(batch)
-        print(f"🔄 Retrieved {len(batch)} markets (offset {offset})")
+        markets.extend(batch)
         offset += limit
-        time.sleep(0.1)
+        time.sleep(0.1)          # polite pacing
+    return markets
 
-    print(f"📦 Total markets fetched: {len(all_markets)}")
-    return all_markets
+def main():
+    events      = fetch_events()
+    now_iso     = datetime.utcnow().isoformat()
+    markets_raw = fetch_all_markets()
 
-def fetch_kalshi():
-    all_markets = fetch_all_markets()
-    events = fetch_events()
-    now = datetime.utcnow().isoformat()
+    # keep only unexpired markets with non‑zero volume
+    valid = [m for m in markets_raw
+             if m.get("expiration") and m["expiration"] > now_iso
+             and float(m.get("volume", 0)) > 0]
 
-    valid_markets = []
-    for market in all_markets:
-        try:
-            if not market.get("expiration") or market["expiration"] <= now:
-                continue
-            if float(market.get("volume", 0)) <= 0:
-                continue
-            valid_markets.append(market)
-        except Exception:
-            continue
+    top = sorted(valid, key=lambda m: float(m["volume"]), reverse=True)[:1000]
+    ts  = datetime.utcnow().isoformat() + "Z"
 
-    print(f"✅ Valid markets after filters: {len(valid_markets)}")
-    sorted_markets = sorted(valid_markets, key=lambda m: float(m.get("volume", 0)), reverse=True)
-    top_markets = sorted_markets[:1000]
+    rows_markets, rows_snaps, rows_outcomes = [], [], []
 
-    timestamp = datetime.utcnow().isoformat() + "Z"
-    markets_data = []
-    snapshots = []
-    outcomes = []
+    for m in top:
+        mid      = m["ticker"]
+        yes_bid  = m.get("yes_bid")
+        no_bid   = m.get("no_bid")
+        prob     = ((yes_bid + (1 - no_bid)) / 2
+                     if yes_bid is not None and no_bid is not None else None)
 
-    for m in top_markets:
-        market_id = m.get("ticker")
-        event = events.get(m.get("event_ticker"), {})
-        yes_bid = m.get("yes_bid")
-        no_bid = m.get("no_bid")
-        prob = (yes_bid + (1 - no_bid)) / 2 if yes_bid is not None and no_bid is not None else None
-
-        markets_data.append({
-            "market_id": market_id,
-            "market_name": m.get("title"),
+        rows_markets.append({
+            "market_id":          mid,
+            "market_name":        m.get("title"),
             "market_description": m.get("description"),
-            "event_name": event.get("title") if event else None,
-            "event_ticker": m.get("event_ticker"),
-            "expiration": m.get("expiration"),
-            "tags": m.get("tags", []),
-            "source": "kalshi",
-            "status": m.get("status")
+            "event_name":         events.get(m.get("event_ticker"), {}).get("title"),
+            "event_ticker":       m.get("event_ticker"),
+            "expiration":         m.get("expiration"),
+            "tags":               m.get("tags", []),   # stored as jsonb
+            "source":             "kalshi",
+            "status":             m.get("status")
         })
 
-        snapshots.append({
-            "market_id": market_id,
-            "price": round(prob, 4) if prob is not None else None,
-            "yes_bid": yes_bid,
-            "no_bid": no_bid,
-            "volume": m.get("volume"),
-            "liquidity": m.get("open_interest"),
-            "timestamp": timestamp,
-            "source": "kalshi"
+        rows_snaps.append({
+            "market_id": mid,
+            "price":      round(prob, 4) if prob is not None else None,
+            "yes_bid":    yes_bid,
+            "no_bid":     no_bid,
+            "volume":     m.get("volume"),
+            "liquidity":  m.get("open_interest"),
+            "timestamp":  ts,
+            "source":     "kalshi"
         })
 
         if yes_bid is not None:
-            outcomes.append({
-                "market_id": market_id,
-                "outcome_name": "Yes",
-                "price": yes_bid,
-                "volume": None,
-                "timestamp": timestamp,
-                "source": "kalshi"
+            rows_outcomes.append({
+                "market_id":   mid,
+                "outcome_name":"Yes",
+                "price":        yes_bid,
+                "volume":       None,
+                "timestamp":    ts,
+                "source":       "kalshi"
             })
         if no_bid is not None:
-            outcomes.append({
-                "market_id": market_id,
-                "outcome_name": "No",
-                "price": 1 - no_bid,
-                "volume": None,
-                "timestamp": timestamp,
-                "source": "kalshi"
+            rows_outcomes.append({
+                "market_id":   mid,
+                "outcome_name":"No",
+                "price":        1 - no_bid,
+                "volume":       None,
+                "timestamp":    ts,
+                "source":       "kalshi"
             })
 
-    insert_to_supabase("markets", markets_data)
-    insert_to_supabase("market_snapshots", snapshots)
-    insert_to_supabase("market_outcomes", outcomes)
+    insert_to_supabase("markets",          rows_markets)
+    insert_to_supabase("market_snapshots", rows_snaps)
+    insert_to_supabase("market_outcomes",  rows_outcomes)
 
 if __name__ == "__main__":
-    fetch_kalshi()
+    main()
