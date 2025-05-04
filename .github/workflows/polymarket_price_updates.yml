@@ -8,8 +8,6 @@ on:
 jobs:
   update-polymarket-prices:
     runs-on: ubuntu-latest
-    concurrency: polymarket-snapshots
-
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -17,7 +15,6 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Run snapshot loader
         env:
-          POLYMARKET_API_KEY:        ${{ secrets.POLYMARKET_API_KEY }}
           SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: python polymarket_update_prices.py
