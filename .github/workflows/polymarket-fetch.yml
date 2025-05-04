@@ -2,22 +2,19 @@ name: Polymarket Full Fetch
 
 on:
   schedule:
-    - cron: "0 6 * * *"           # daily @ 06:00 UTC
+    - cron: "0 6 * * *"     # daily at 06:00 UTC  (adjust if hourly)
   workflow_dispatch:
 
 jobs:
-  fetch-polymarket-markets:
+  fetch-polymarket:
     runs-on: ubuntu-latest
-    concurrency: polymarket-full
-
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
       - run: pip install -r requirements.txt
-      - name: Run full fetch
+      - name: Run Polymarket fetch
         env:
-          POLYMARKET_API_KEY:        ${{ secrets.POLYMARKET_API_KEY }}
           SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: python polymarket_fetch.py
