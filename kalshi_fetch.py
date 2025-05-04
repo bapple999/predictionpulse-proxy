@@ -23,21 +23,19 @@ def fetch_events() -> dict:
             ev_map[key] = e
     return ev_map
 
-def fetch_all_markets(limit: int = 100) -> list:
+def fetch_all_markets(limit: int = 1000):   # 1. bigger pages
     markets, offset = [], 0
     while True:
-        r = requests.get(
-            MARKETS_ENDPOINT,
-            params={"limit": limit, "offset": offset},
-            timeout=15,
-        )
+        r = requests.get(MARKETS_ENDPOINT,
+                         params={"limit": limit, "offset": offset},
+                         timeout=15)
         r.raise_for_status()
         batch = r.json().get("markets", [])
         if not batch:
             break
         markets.extend(batch)
         offset += limit
-        time.sleep(0.1)
+        #   time.sleep(0.1)   ← 2. delete this pause
     return markets
 
 # ────────────────────────────────────────────────────────────
