@@ -1,28 +1,29 @@
-name: Kalshi Full Fetch
+name: Kalshi Full Fetch
 
 on:
   schedule:
-    - cron: '0 5 * * *'  # Runs daily at 5:00 UTC
+    - cron: "0 5 * * *"          # daily @ 05:00 UTC
   workflow_dispatch:
 
 jobs:
   fetch-kalshi-markets:
     runs-on: ubuntu-latest
+    concurrency: kalshi-full      # prevent overlapping runs
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: 3.11
+          python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install deps
         run: pip install -r requirements.txt
 
-      - name: Run Kalshi Full Fetch
+      - name: Run full fetch
         env:
-          KALSHI_API_KEY: ${{ secrets.KALSHI_API_KEY }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          KALSHI_API_KEY:            ${{ secrets.KALSHI_API_KEY }}
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python kalshi_fetch.py
+        run: python scripts/kalshi_fetch.py
