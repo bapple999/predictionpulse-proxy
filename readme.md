@@ -1,134 +1,105 @@
-# 📊 Prediction Pulse — Ingestion Pipeline
+# 📊 Prediction Pulse — Ingestion Pipeline
 
-*Fast, idempotent loaders for Kalshi & Polymarket → Supabase*
+*Fast, idempotent loaders for Kalshi & Polymarket → Supabase*
 
-[![Kalshi Markets](https://github.com/yourname/prediction-pulse-ingestion/actions/workflows/kalshi.yml/badge.svg)](https://github.com/yourname/prediction-pulse-ingestion/actions/workflows/kalshi.yml)
-[![Polymarket Markets](https://github.com/yourname/prediction-pulse-ingestion/actions/workflows/polymarket.yml/badge.svg)](https://github.com/yourname/prediction-pulse-ingestion/actions/workflows/polymarket.yml)
+[![Kalshi Full Fetch](https://github.com/yourname/predictionpulse-ingestion/actions/workflows/kalshi_fetch.yml/badge.svg)](https://github.com/yourname/predictionpulse-ingestion/actions/workflows/kalshi_fetch.yml)
+[![Kalshi Price Updates](https://github.com/yourname/predictionpulse-ingestion/actions/workflows/kalshi_update.yml/badge.svg)](https://github.com/yourname/predictionpulse-ingestion/actions/workflows/kalshi_update.yml)
+[![Polymarket Full Fetch](https://github.com/yourname/predictionpulse-ingestion/actions/workflows/polymarket-fetch.yml/badge.svg)](https://github.com/yourname/predictionpulse-ingestion/actions/workflows/polymarket-fetch.yml)
+[![Polymarket Price Updates](https://github.com/yourname/predictionpulse-ingestion/actions/workflows/polymarket_price_updates.yml/badge.svg)](https://github.com/yourname/predictionpulse-ingestion/actions/workflows/polymarket_price_updates.yml)
 
 ---
 
 ## 🚀 Quick‑start (local)
 
 ```bash
-# clone & install
-git clone https://github.com/yourname/prediction‑pulse‑ingestion.git
-cd prediction‑pulse‑ingestion
-cp .env.example .env                # add the three keys below
-pip install -r requirements.txt
+# Clone & install
+ git clone https://github.com/yourname/predictionpulse-ingestion.git
+ cd predictionpulse-ingestion
+ pip install -r requirements.txt
 
-# one‑off test runs
-python scripts/kalshi_fetch.py       # full Kalshi load
-python scripts/kalshi_update_prices.py  # single price snapshot
+# Configure secrets
+ cp .env.example .env      # fill SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, KALSHI_API_KEY, POLYMARKET_API_KEY
+
+# Run once to verify
+ python kalshi_fetch.py               # daily metadata load
+ python kalshi_update_prices.py       # single price snapshot
 ```
 
-*Requires **Python 3.11+***.
+*Requires Python 3.11+*
+
+---
+
+## 🗂 Project layout
+
+```
+.
+├── common.py                     # shared insert_to_supabase helper
+├── kalshi_fetch.py               # daily full‑market load
+├── kalshi_update_prices.py       # 5‑minute snapshots
+├── polymarket_fetch.py           # daily full‑market load
+├── polymarket_update_prices.py   # 5‑minute snapshots
+├── requirements.txt
+├── README.md
+└── .github/
+    └── workflows/
+        ├── kalshi_fetch.yml
+        ├── kalshi_update.yml
+        ├── polymarket-fetch.yml
+        └── polymarket_price_updates.yml
+```
 
 ---
 
 ## 🔑 Required environment variables
 
-| Var                         | Purpose                                                |
-| --------------------------- | ------------------------------------------------------ |
-| `SUPABASE_URL`              | e.g. `https://abcde.supabase.co`                       |
-| `SUPABASE_SERVICE_ROLE_KEY` | Long service key (server‑side only)                    |
-| `KALSHI_API_KEY`            | Personal Kalshi API token                              |
-| `POLYMARKET_API_KEY`        | (optional) only if you hit the private Gamma endpoints |
+| Var                         | Purpose                               |
+| --------------------------- | ------------------------------------- |
+| `SUPABASE_URL`              | e.g. `https://abcde.supabase.co`      |
+| `SUPABASE_SERVICE_ROLE_KEY` | long service key (server‑side only)   |
+| `KALSHI_API_KEY`            | Kalshi personal API token             |
+| `POLYMARKET_API_KEY`        | (optional) higher quota for Gamma API |
 
-Add them **once** in both `.env` (for local runs) **and** your GitHub Secrets.
-
----
-
-## 📁 Project Structure
-
-```bash
-├── scripts/
-│   ├── polymarket_fetch.py           # Daily full fetch
-│   ├── polymarket_update_prices.py   # 5‑min snapshots
-│   ├── kalshi_fetch.py               # Daily full fetch + events
-│   └── kalshi_update_prices.py       # 5‑min snapshots
-│
-├── .github/
-│   └── workflows/
-│       ├── polymarket.yml
-│       └── kalshi.yml
-│
-├── requirements.txt
-└── README.md
-```
+Add them to **`.env`** for local runs and **GitHub Secrets** for CI.
 
 ---
 
-## 🔃 Scheduled Jobs
+## 🔃 Scheduled jobs
 
-| Workflow                 | Script                        | Cron          | Rows / run       |
-| ------------------------ | ----------------------------- | ------------- | ---------------- |
-| **Kalshi Markets**       | `kalshi_fetch.py`             | `0 2 * * *`   | \~1 000 markets  |
-| **Kalshi Snapshots**     | `kalshi_update_prices.py`     | `*/5 * * * *` | \~10 k snapshots |
-| **Polymarket Markets**   | `polymarket_fetch.py`         | `0 3 * * *`   | similar          |
-| **Polymarket Snapshots** | `polymarket_update_prices.py` | `*/5 * * * *` | similar          |
+| Workflow file                  | Script                               | Cron          |
+| ------------------------------ | ------------------------------------ | ------------- |
+| `kalshi_fetch.yml`             | `python kalshi_fetch.py`             | `0 5 * * *`   |
+| `kalshi_update.yml`            | `python kalshi_update_prices.py`     | `*/5 * * * *` |
+| `polymarket-fetch.yml`         | `python polymarket_fetch.py`         | `0 6 * * *`   |
+| `polymarket_price_updates.yml` | `python polymarket_update_prices.py` | `*/5 * * * *` |
 
-*Full‑fetch jobs rebuild metadata; snapshot jobs keep prices fresh without hammering the APIs.*
+Full‑fetch jobs rebuild metadata once a day; lightweight update jobs keep quotes fresh every five minutes without hammering the APIs.
 
 ---
 
-## 🗄 Supabase Schema (simplified)
+## 🗄 Supabase schema (jsonb ≈ arrays)
 
-### `markets`  — core metadata
+* **`markets`** — static metadata
+* **`market_snapshots`** — price / volume time‑series
+* **`market_outcomes`** — outcome‑level bids (Yes/No, Team A/Team B, etc.)
 
-```jsonc
-{
-  "market_id": "string",
-  "market_name": "string",
-  "description": "string",
-  "event_name": "string",
-  "expiration": "timestamp",
-  "tags": ["string"],  // jsonb array
-  "source": "kalshi | polymarket",
-  "status": "active | closed | resolved"
-}
-```
-
-### `market_snapshots`  — price history
-
-```jsonc
-{
-  "market_id": "string",
-  "price": 0.53,
-  "volume": 12000,
-  "liquidity": 45000,
-  "timestamp": "timestamp",
-  "source": "kalshi | polymarket"
-}
-```
-
-### `market_outcomes`  — YES/NO legs
-
-```jsonc
-{
-  "market_id": "string",
-  "outcome_name": "Yes | No",
-  "price": 0.57,
-  "timestamp": "timestamp",
-  "source": "kalshi | polymarket"
-}
-```
-
-> **Note**  `tags` is stored as **`jsonb`**. Send `["economics","CPI"]`, not a Postgres array literal.
+The `tags` column is `jsonb`; just pass a Python list (`["econ","CPI"]`).
 
 ---
 
 ## 🛣 Roadmap
 
-* [ ] Add `market_resolutions` table (winner + close price)
-* [ ] Webhook → Discord for >5 ppt moves
-* [ ] AI‑generated “TL;DR why it moved” summaries
+* [ ] Add `market_resolutions` table (winner + resolved price)
+* [ ] Discord webhook for moves >5 ppt in 24 h
+* [ ] Historical chart endpoint
 
 ---
 
-### ⚠️ Disclaimer
+## ⚠️ Disclaimer
 
-Data is provided “as is”; **not financial advice**.
+All data is provided “as is” for informational purposes only and **is not financial advice**.
 
-### 📝 License
+---
+
+## 📝 License
 
 MIT
