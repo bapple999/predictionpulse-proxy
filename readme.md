@@ -1,6 +1,40 @@
-# 📊 Prediction Pulse Ingestion Pipeline
+# 📊 Prediction Pulse — Ingestion Pipeline
 
-This repository powers the data ingestion for **Prediction Pulse**, aggregating market data from Polymarket and Kalshi into a Supabase database for analytics, dashboards, and prediction market insights.
+*Fast, idempotent loaders for Kalshi & Polymarket → Supabase*
+
+[![Kalshi Markets](https://github.com/yourname/prediction-pulse-ingestion/actions/workflows/kalshi.yml/badge.svg)](https://github.com/yourname/prediction-pulse-ingestion/actions/workflows/kalshi.yml)
+[![Polymarket Markets](https://github.com/yourname/prediction-pulse-ingestion/actions/workflows/polymarket.yml/badge.svg)](https://github.com/yourname/prediction-pulse-ingestion/actions/workflows/polymarket.yml)
+
+---
+
+## 🚀 Quick‑start (local)
+
+```bash
+# clone & install
+git clone https://github.com/yourname/prediction‑pulse‑ingestion.git
+cd prediction‑pulse‑ingestion
+cp .env.example .env                # add the three keys below
+pip install -r requirements.txt
+
+# one‑off test runs
+python scripts/kalshi_fetch.py       # full Kalshi load
+python scripts/kalshi_update_prices.py  # single price snapshot
+```
+
+*Requires **Python 3.11+***.
+
+---
+
+## 🔑 Required environment variables
+
+| Var                         | Purpose                                                |
+| --------------------------- | ------------------------------------------------------ |
+| `SUPABASE_URL`              | e.g. `https://abcde.supabase.co`                       |
+| `SUPABASE_SERVICE_ROLE_KEY` | Long service key (server‑side only)                    |
+| `KALSHI_API_KEY`            | Personal Kalshi API token                              |
+| `POLYMARKET_API_KEY`        | (optional) only if you hit the private Gamma endpoints |
+
+Add them **once** in both `.env` (for local runs) **and** your GitHub Secrets.
 
 ---
 
@@ -8,15 +42,15 @@ This repository powers the data ingestion for **Prediction Pulse**, aggregating 
 
 ```bash
 ├── scripts/
-│   ├── polymarket_fetch.py           # Daily full fetch
-│   ├── polymarket_update_prices.py   # Frequent price updates
-│   ├── kalshi_fetch.py               # Daily full fetch + events
-│   └── kalshi_update_prices.py       # Frequent price updates
+│   ├── polymarket_fetch.py           # Daily full fetch
+│   ├── polymarket_update_prices.py   # 5‑min snapshots
+│   ├── kalshi_fetch.py               # Daily full fetch + events
+│   └── kalshi_update_prices.py       # 5‑min snapshots
 │
 ├── .github/
-│   └── workflows/
-│       ├── polymarket.yml
-│       └── kalshi.yml
+│   └── workflows/
+│       ├── polymarket.yml
+│       └── kalshi.yml
 │
 ├── requirements.txt
 └── README.md
@@ -24,120 +58,77 @@ This repository powers the data ingestion for **Prediction Pulse**, aggregating 
 
 ---
 
-## 🔄 Workflow Overview
+## 🔃 Scheduled Jobs
 
-### Polymarket
+| Workflow                 | Script                        | Cron          | Rows / run       |
+| ------------------------ | ----------------------------- | ------------- | ---------------- |
+| **Kalshi Markets**       | `kalshi_fetch.py`             | `0 2 * * *`   | \~1 000 markets  |
+| **Kalshi Snapshots**     | `kalshi_update_prices.py`     | `*/5 * * * *` | \~10 k snapshots |
+| **Polymarket Markets**   | `polymarket_fetch.py`         | `0 3 * * *`   | similar          |
+| **Polymarket Snapshots** | `polymarket_update_prices.py` | `*/5 * * * *` | similar          |
 
-| Script                        | Function                                                                                       | Frequency        |
-| ----------------------------- | ---------------------------------------------------------------------------------------------- | ---------------- |
-| `polymarket_fetch.py`         | Fetches all market metadata, expiration, tags, and real-time price data from Gamma & CLOB APIs | Daily @ 5:00 UTC |
-| `polymarket_update_prices.py` | Refreshes prices, volume, liquidity only via CLOB                                              | Every 5 minutes  |
-
-### Kalshi
-
-| Script                    | Function                                                                                   | Frequency        |
-| ------------------------- | ------------------------------------------------------------------------------------------ | ---------------- |
-| `kalshi_fetch.py`         | Fetches all market metadata and event info, price bids, and calculates implied probability | Daily @ 5:00 UTC |
-| `kalshi_update_prices.py` | Refreshes current prices and outcomes only                                                 | Every 5 minutes  |
+*Full‑fetch jobs rebuild metadata; snapshot jobs keep prices fresh without hammering the APIs.*
 
 ---
 
-## ⚙️ GitHub Actions
+## 🗄 Supabase Schema (simplified)
 
-Each workflow uses environment variables and GitHub secrets:
+### `markets`  — core metadata
 
-### Common Steps in Workflows:
-
-* Checkout repo
-* Set up Python 3.11
-* Install dependencies via `requirements.txt`
-* Set secrets via environment variables
-
-### Required Secrets
-
-* `SUPABASE_URL`
-* `SUPABASE_SERVICE_ROLE_KEY`
-* `KALSHI_API_KEY` (only for Kalshi scripts)
-
-### Files
-
-* `.github/workflows/polymarket.yml`
-* `.github/workflows/kalshi.yml`
-
-Each workflow includes `workflow_dispatch` for manual runs.
-
----
-
-## 🗃 Supabase Table Schema
-
-### `markets`
-
-Stores core metadata and event descriptions
-
-```json
+```jsonc
 {
   "market_id": "string",
   "market_name": "string",
   "description": "string",
   "event_name": "string",
   "expiration": "timestamp",
-  "tags": ["string"],
-  "source": "kalshi" | "polymarket",
-  "status": "active" | "closed" | "resolved"
+  "tags": ["string"],  // jsonb array
+  "source": "kalshi | polymarket",
+  "status": "active | closed | resolved"
 }
 ```
 
-### `market_snapshots`
+### `market_snapshots`  — price history
 
-Price, volume, and liquidity over time
-
-```json
+```jsonc
 {
   "market_id": "string",
-  "price": float,
-  "volume": float,
-  "liquidity": float,
+  "price": 0.53,
+  "volume": 12000,
+  "liquidity": 45000,
   "timestamp": "timestamp",
-  "source": "kalshi" | "polymarket"
+  "source": "kalshi | polymarket"
 }
 ```
 
-### `market_outcomes`
+### `market_outcomes`  — YES/NO legs
 
-Outcome-level pricing (e.g., Yes/No)
-
-```json
+```jsonc
 {
   "market_id": "string",
-  "outcome_name": "Yes" | "No",
-  "price": float,
+  "outcome_name": "Yes | No",
+  "price": 0.57,
   "timestamp": "timestamp",
-  "source": "kalshi" | "polymarket"
+  "source": "kalshi | polymarket"
 }
 ```
 
----
-
-## 📌 Best Practices
-
-* Use `fetch.py` jobs for complete metadata refresh (daily only)
-* Use `update_prices.py` jobs for frequent lightweight updates
-* Monitor API usage to avoid rate limiting (especially Polymarket CLOB)
-* Store intermediate results locally for development or test runs
-* Keep Supabase `Prefer: return=minimal` for performance
+> **Note**  `tags` is stored as **`jsonb`**. Send `["economics","CPI"]`, not a Postgres array literal.
 
 ---
 
-## 🚀 Future Ideas
+## 🛣 Roadmap
 
-* Add webhook alerts for big market movements
-* AI-generated news summaries for major shifts
-* Historical charts per market ID
-* Dashboard pages per source
-* Market metadata archive or freeze history
+* [ ] Add `market_resolutions` table (winner + close price)
+* [ ] Webhook → Discord for >5 ppt moves
+* [ ] AI‑generated “TL;DR why it moved” summaries
 
 ---
 
-For dev notes, see `/docs/dev-notes.md` (to be created).
+### ⚠️ Disclaimer
 
-Questions? Open an issue or contact the maintainer.
+Data is provided “as is”; **not financial advice**.
+
+### 📝 License
+
+MIT
