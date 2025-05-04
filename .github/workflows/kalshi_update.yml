@@ -1,28 +1,29 @@
-name: Kalshi Price Updates
+name: Kalshi Price Updates
 
 on:
   schedule:
-    - cron: '*/5 * * * *'  # Runs every 5 minutes
+    - cron: "*/5 * * * *"         # every 5 min
   workflow_dispatch:
 
 jobs:
   update-kalshi-prices:
     runs-on: ubuntu-latest
+    concurrency: kalshi-snapshots  # avoid race conditions
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: 3.11
+          python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install deps
         run: pip install -r requirements.txt
 
-      - name: Run Kalshi Price Update
+      - name: Run snapshot loader
         env:
-          KALSHI_API_KEY: ${{ secrets.KALSHI_API_KEY }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          KALSHI_API_KEY:            ${{ secrets.KALSHI_API_KEY }}
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python kalshi_update_prices.py
+        run: python scripts/kalshi_update_prices.py
