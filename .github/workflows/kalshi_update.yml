@@ -26,4 +26,4 @@ jobs:
           KALSHI_API_KEY:            ${{ secrets.KALSHI_API_KEY }}
           SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python scripts/kalshi_update_prices.py
+        run: python kalshi_update_prices.py
