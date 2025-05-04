@@ -126,10 +126,12 @@ def main() -> None:
     insert_to_supabase("market_snapshots", rows_snaps)
     insert_to_supabase("market_outcomes",  rows_outcomes)
 
-    print(
-        f\"\"\"✅ Markets {len(rows_markets)} | "
-        f"Snapshots {len(rows_snaps)} | Outcomes {len(rows_outcomes)}\"\"\"
-    )
+    # ‑‑‑ at the very end of kalshi_fetch.py  (inside main)
+print(
+    f"✅ Markets {len(rows_markets)} | "
+    f"Snapshots {len(rows_snaps)} | Outcomes {len(rows_outcomes)}"
+)
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
