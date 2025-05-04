@@ -1,18 +1,19 @@
-import os, requests, time
+import os
+import requests, time
 from datetime import datetime
-from scripts.common import insert_to_supabase   # adjust if your package name differs
+from common import insert_to_supabase
 
 ROOT_API         = "https://api.elections.kalshi.com/trade-api/v2"
 MARKETS_ENDPOINT = f"{ROOT_API}/markets"
 EVENTS_ENDPOINT  = f"{ROOT_API}/events"
 HEADERS_KALSHI   = {"Authorization": f"Bearer {os.environ['KALSHI_API_KEY']}"}
 
-def fetch_events():
+def fetch_events() -> dict:
     r = requests.get(EVENTS_ENDPOINT, headers=HEADERS_KALSHI, timeout=15)
     r.raise_for_status()
     return {e["ticker"]: e for e in r.json().get("events", [])}
 
-def fetch_all_markets(limit=100):
+def fetch_all_markets(limit: int = 100) -> list:
     markets, offset = [], 0
     while True:
         r = requests.get(MARKETS_ENDPOINT,
@@ -28,7 +29,7 @@ def fetch_all_markets(limit=100):
         time.sleep(0.1)          # polite pacing
     return markets
 
-def main():
+def main() -> None:
     events      = fetch_events()
     now_iso     = datetime.utcnow().isoformat()
     markets_raw = fetch_all_markets()
@@ -95,6 +96,7 @@ def main():
     insert_to_supabase("markets",          rows_markets)
     insert_to_supabase("market_snapshots", rows_snaps)
     insert_to_supabase("market_outcomes",  rows_outcomes)
+    print(f"✅ Markets {len(rows_markets)} | Snapshots {len(rows_snaps)} | Outcomes {len(rows_outcomes)}")
 
 if __name__ == "__main__":
     main()
