@@ -18,33 +18,39 @@ def fetch_events() -> dict:
 
 # ─────────────────────────────────────────────────────────────
 def fetch_all_markets(limit: int = 1000) -> list:
-    print("📡 Fetching *trading* Kalshi markets…", flush=True)
+    print("📡 Fetching Kalshi markets (paged)…", flush=True)
     markets, offset = [], 0
     while True:
         resp = requests.get(
             MARKETS_ENDPOINT,
             headers=HEADERS,
-            params={"limit": limit, "offset": offset, "status": "trading"},  # ← only live pages
+            params={"limit": limit, "offset": offset},   # ⬅️  no status param
             timeout=15,
         )
         if resp.status_code in (502, 504):
-            print(f"⚠️  50x at offset {offset} → assuming end of list", flush=True)
+            print(f"⚠️  50x at offset {offset} → assuming end", flush=True)
             break
         resp.raise_for_status()
 
         batch = resp.json().get("markets", [])
         if not batch:
             break
+
         markets.extend(batch)
         offset += limit
         print(f"⏱  {len(batch):4} markets (offset {offset})", flush=True)
 
-        # Break if batch < limit  OR first market already expired (API is sorted by expiry)
-        if len(batch) < limit or batch[-1].get("expiration") <= datetime.utcnow().isoformat():
+        # --- early‑exit rules ---------------------------------
+        if len(batch) < limit:                          # partial page → end
             break
+        last_exp = batch[-1].get("expiration") or "1970"
+        if last_exp <= datetime.utcnow().isoformat():   # last market already expired
+            break
+        # ------------------------------------------------------
 
-    print(f"🔍 Total live markets fetched: {len(markets)}", flush=True)
+    print(f"🔍 Total markets fetched: {len(markets)}", flush=True)
     return markets
+
 
 # ─────────────────────────────────────────────────────────────
 def main() -> None:
