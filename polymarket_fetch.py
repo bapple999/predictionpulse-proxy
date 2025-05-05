@@ -71,7 +71,7 @@ def main():
         rows_m.append({
             "market_id":   mid,
             "market_name": get_field(g, "title", "slug", default=""),
-            "description": g.get("description"),
+            "market_description": g.get("description"),
             "tags":        g.get("categories", []),
             "expiration":  get_field(g, "endDate", "endTime", "end_time"),
             "source":      "polymarket",
