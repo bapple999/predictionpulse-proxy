@@ -32,11 +32,11 @@ def fetch_all_markets(limit: int = 1000) -> list:
     while True:
         resp = requests.get(
             MARKETS_ENDPOINT,
-            headers=HEADERS,
+            headers=HEADERS,                  # keep your existing HEADERS var
             params={"limit": limit, "offset": offset},
             timeout=15,
         )
-        # Many offsets past the end return 502/504 → treat as EOF
+        # 502 / 504 often means we've paged past the real end
         if resp.status_code in (502, 504):
             print(f"⚠️  50x at offset {offset} → assuming end of list", flush=True)
             break
@@ -48,11 +48,15 @@ def fetch_all_markets(limit: int = 1000) -> list:
 
         markets.extend(batch)
         offset += limit
-        # Heartbeat so GitHub sees output every few seconds
         print(f"⏱  {len(batch):4} markets (offset {offset})", flush=True)
+
+        # 🔒 safety brake: when API returns < limit rows, we've reached the end
+        if len(batch) < limit:
+            break
 
     print(f"🔍 Total markets fetched: {len(markets)}", flush=True)
     return markets
+
 
 # ─────────────────────────────────────────────────────────────
 def main() -> None:
