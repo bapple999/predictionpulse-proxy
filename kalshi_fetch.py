@@ -1,11 +1,11 @@
 # kalshi_fetch.py  – hourly metadata + snapshot loader for Kalshi
 import requests
 from datetime import datetime
-from common import insert_to_supabase   # shared helper
+from common import insert_to_supabase
 
 MARKETS_ENDPOINT = "https://api.elections.kalshi.com/trade-api/v2/markets"
 EVENTS_ENDPOINT  = "https://api.elections.kalshi.com/trade-api/v2/events"
-HEADERS          = {"User-Agent": "prediction-pulse-loader/1.1"}  # public endpoint
+HEADERS          = {"User-Agent": "prediction-pulse-loader/1.1"}
 
 # ─────────────────────────────────────────────────────────────
 def fetch_events() -> dict:
@@ -14,7 +14,8 @@ def fetch_events() -> dict:
     r.raise_for_status()
     events = r.json().get("events", [])
     print(f"🔍 Retrieved {len(events)} events", flush=True)
-    return {e.get("ticker") or e.get("event_ticker"): e for e in events if (e.get("ticker") or e.get("event_ticker"))}
+    return {e.get("ticker") or e.get("event_ticker"): e for e in events
+            if (e.get("ticker") or e.get("event_ticker"))}
 
 # ─────────────────────────────────────────────────────────────
 def fetch_all_markets(limit: int = 1000) -> list:
@@ -24,7 +25,7 @@ def fetch_all_markets(limit: int = 1000) -> list:
         resp = requests.get(
             MARKETS_ENDPOINT,
             headers=HEADERS,
-            params={"limit": limit, "offset": offset},   # ⬅️  no status param
+            params={"limit": limit, "offset": offset},
             timeout=15,
         )
         if resp.status_code in (502, 504):
@@ -40,17 +41,25 @@ def fetch_all_markets(limit: int = 1000) -> list:
         offset += limit
         print(f"⏱  {len(batch):4} markets (offset {offset})", flush=True)
 
-        # --- early‑exit rules ---------------------------------
-        if len(batch) < limit:                          # partial page → end
+        if len(batch) < limit:                                        # partial page
             break
-        last_exp = batch[-1].get("expiration") or "1970"
-        if last_exp <= datetime.utcnow().isoformat():   # last market already expired
-            break
-        # ------------------------------------------------------
+        if (batch[-1].get("expiration") or "1970") <= datetime.utcnow().isoformat():
+            break                                                    # page already expired
 
     print(f"🔍 Total markets fetched: {len(markets)}", flush=True)
     return markets
 
+# ─────────────────────────────────────────────────────────────
+def is_active(m: dict, now_iso: str) -> bool:
+    if not m.get("expiration") or m["expiration"] <= now_iso:
+        return False
+    if float(m.get("volume", 0)) > 0:
+        return True
+    if float(m.get("open_interest", 0)) > 0:
+        return True
+    if m.get("yes_bid") is not None and m.get("no_bid") is not None:
+        return True
+    return False
 
 # ─────────────────────────────────────────────────────────────
 def main() -> None:
@@ -58,15 +67,10 @@ def main() -> None:
     now_iso     = datetime.utcnow().isoformat()
     markets_raw = fetch_all_markets()
 
-    # keep only unexpired markets with positive volume
-    valid = [
-        m for m in markets_raw
-        if m.get("expiration") and m["expiration"] > now_iso
-        and float(m.get("volume", 0)) > 0
-    ]
+    valid = [m for m in markets_raw if is_active(m, now_iso)]
     print(f"🏆 Markets kept after filters: {len(valid)}", flush=True)
 
-    top = sorted(valid, key=lambda m: float(m["volume"]), reverse=True)[:1000]
+    top = sorted(valid, key=lambda m: float(m.get("volume", 0)), reverse=True)[:1000]
     ts  = datetime.utcnow().isoformat() + "Z"
 
     rows_markets, rows_snaps, rows_outs = [], [], []
@@ -109,7 +113,7 @@ def main() -> None:
             })
 
     print("💾 Writing rows to Supabase…", flush=True)
-    insert_to_supabase("markets",          rows_markets)          # UPSERT
+    insert_to_supabase("markets",          rows_markets)
     insert_to_supabase("market_snapshots", rows_snaps, conflict_key=None)
     insert_to_supabase("market_outcomes",  rows_outs,  conflict_key=None)
 
