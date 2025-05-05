@@ -23,6 +23,7 @@ def clob_prices(clob: dict):
     outs = {o.get("name"): o.get("price") for o in clob.get("outcomes", [])}
     return outs.get("Yes"), outs.get("No")
 
+
 def fetch_clob(mid: str):
     """Fetch CLOB data or return None if not on CLOB."""
     r = requests.get(CLOB_ENDPOINT.format(mid), timeout=10)
@@ -30,6 +31,7 @@ def fetch_clob(mid: str):
         return None
     r.raise_for_status()
     return r.json()
+
 
 def load_market_ids(now_iso: str) -> list[str]:
     """Load all unexpired market_ids from Supabase."""
@@ -58,7 +60,7 @@ def main():
         if clob:
             yes, no = clob_prices(clob)
 
-        # 3) compute implied probability
+        # 3) compute implied probability if both bids exist
         prob = (
             (yes/100 + (1 - no/100)) / 2
             if yes is not None and no is not None
@@ -77,13 +79,13 @@ def main():
             "source":     "polymarket_clob",
         })
 
-        # 5) write outcomes when we have real prices
-        if yes is not None and no is not None:
+        # 5) write outcomes for every market when we have an implied prob
+        if prob is not None:
             outcomes.extend([
                 {
                     "market_id":    mid,
                     "outcome_name": "Yes",
-                    "price":        yes/100,
+                    "price":        round(prob, 4),
                     "volume":       None,
                     "timestamp":    ts,
                     "source":       "polymarket_clob",
@@ -91,7 +93,7 @@ def main():
                 {
                     "market_id":    mid,
                     "outcome_name": "No",
-                    "price":        1 - no/100,
+                    "price":        round(1 - prob, 4),
                     "volume":       None,
                     "timestamp":    ts,
                     "source":       "polymarket_clob",
