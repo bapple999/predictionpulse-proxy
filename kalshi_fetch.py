@@ -26,7 +26,14 @@ def fetch_events() -> dict:
     resp.raise_for_status()
     evs = resp.json().get('events', [])
     print(f'🔍 Retrieved {len(evs)} events', flush=True)
-    return {e.get('ticker'): e for e in evs if e.get('ticker')}
+    # index on event TICKER
+    index = {}
+    for e in evs:
+        key = e.get('ticker') or e.get('event_ticker')
+        if not key:
+            continue
+        index[key] = e
+    return index
 
 # ───────── fetch markets in pages ─────────
 def fetch_all_markets(limit: int = 1000) -> list:
@@ -54,7 +61,7 @@ def fetch_all_markets(limit: int = 1000) -> list:
             break
 
         # detect duplicates to avoid infinite loop
-        tickers = [m.get('ticker') for m in batch]
+        tickers = [m.get('ticker') for m in batch if m.get('ticker')]
         if any(t in seen for t in tickers):
             print(f'🔒 Duplicate page at offset {offset}, stopping', flush=True)
             break
@@ -74,10 +81,10 @@ def fetch_all_markets(limit: int = 1000) -> list:
 # ───────── main ─────────
 def main():
     # 1) fetch events & raw markets
-    events = fetch_events()
+    events     = fetch_events()
     raw_markets = fetch_all_markets()
 
-    # 2) remove filtering to load every fetched market
+    # 2) ingest every fetched market (no filtering)
     valid = raw_markets
     print(f'🏆 Markets to ingest: {len(valid)}', flush=True)
 
@@ -86,18 +93,23 @@ def main():
     rows_m, rows_s, rows_o = [], [], []
 
     for m in valid:
-        mid = m.get('ticker')
-        # metadata
+        ticker = m.get('ticker')
+        if not ticker:
+            continue
+        # event lookup
+        ev = events.get(m.get('event_ticker')) or {}
+
+        # market metadata
         rows_m.append({
-            'market_id': mid,
-            'market_name': m.get('title'),
-            'market_description': m.get('description'),
-            'event_name': events.get(m.get('event_ticker'), {}).get('title'),
-            'event_ticker': m.get('event_ticker'),
-            'expiration': m.get('expiration'),
-            'tags': m.get('tags', []),
-            'source': 'kalshi',
-            'status': m.get('status'),
+            'market_id':          ticker,
+            'market_name':        m.get('title') or m.get('description') or '',
+            'market_description': m.get('description') or '',
+            'event_name':         ev.get('title') or '',
+            'event_ticker':       m.get('event_ticker') or '',
+            'expiration':         m.get('expiration') or '',
+            'tags':               m.get('tags', []),
+            'source':             'kalshi',
+            'status':             m.get('status') or '',
         })
 
         # snapshot
@@ -105,21 +117,21 @@ def main():
         no  = m.get('no_bid')
         prob = ((yes + (1 - no)) / 2) if yes is not None and no is not None else None
         rows_s.append({
-            'market_id': mid,
-            'price': round(prob, 4) if prob is not None else None,
-            'yes_bid': yes,
-            'no_bid': no,
-            'volume': m.get('volume'),
-            'liquidity': m.get('open_interest'),
-            'timestamp': ts,
-            'source': 'kalshi',
+            'market_id':  ticker,
+            'price':      round(prob, 4) if prob is not None else None,
+            'yes_bid':    yes,
+            'no_bid':     no,
+            'volume':     m.get('volume'),
+            'liquidity':  m.get('open_interest'),
+            'timestamp':  ts,
+            'source':     'kalshi',
         })
 
         # outcomes
         if prob is not None:
             rows_o.extend([
-                {'market_id': mid, 'outcome_name': 'Yes', 'price': yes,     'volume': None, 'timestamp': ts, 'source': 'kalshi'},
-                {'market_id': mid, 'outcome_name': 'No',  'price': 1 - no,  'volume': None, 'timestamp': ts, 'source': 'kalshi'},
+                {'market_id': ticker, 'outcome_name': 'Yes', 'price': yes,     'volume': None, 'timestamp': ts, 'source': 'kalshi'},
+                {'market_id': ticker, 'outcome_name': 'No',  'price': 1 - no,  'volume': None, 'timestamp': ts, 'source': 'kalshi'},
             ])
 
     # 4) write to Supabase
