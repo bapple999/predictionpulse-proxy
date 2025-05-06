@@ -23,6 +23,8 @@ def fetch_events() -> dict:
 def fetch_all_markets(limit: int = 1000) -> list:
     print("📡 Fetching Kalshi markets (paged)…", flush=True)
     markets, offset = [], 0
+    seen_ids = set()
+
     while True:
         resp = requests.get(
             MARKETS_ENDPOINT,
@@ -30,9 +32,8 @@ def fetch_all_markets(limit: int = 1000) -> list:
             params={"limit": limit, "offset": offset},
             timeout=15,
         )
-        # treat 50x as end‑of‑list
         if resp.status_code in (502, 504):
-            print(f"⚠️  50x at offset {offset} → stopping", flush=True)
+            print(f"⚠️ 50x at offset {offset} → assuming end", flush=True)
             break
         resp.raise_for_status()
 
@@ -40,16 +41,24 @@ def fetch_all_markets(limit: int = 1000) -> list:
         if not batch:
             break
 
+        # detect repeated pages
+        batch_ids = [m["ticker"] for m in batch]
+        if any(mid in seen_ids for mid in batch_ids):
+            print(f"🔒 Duplicate batch at offset {offset} → stopping", flush=True)
+            break
+        seen_ids.update(batch_ids)
+
         markets.extend(batch)
         offset += limit
         print(f"⏱  {len(batch):4} markets (offset {offset})", flush=True)
 
-        # safety brake: if fewer than a full page, we've reached the end
+        # safety: if the API ever returned fewer than `limit`, we're at the end
         if len(batch) < limit:
             break
 
     print(f"🔍 Total markets fetched: {len(markets)}", flush=True)
     return markets
+
 
 def is_active(m: dict, now_iso: str) -> bool:
     # 1) must have expiration in the future
