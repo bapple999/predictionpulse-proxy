@@ -15,12 +15,6 @@ def get_field(d: dict, *names, default=None):
 def market_status(expiration_iso: str) -> str:
     return "TRADING" if expiration_iso > datetime.utcnow().isoformat() else "CLOSED"
 
-def clob_prices(clob: dict):
-    if "yesPrice" in clob and "noPrice" in clob:
-        return clob["yesPrice"], clob["noPrice"]
-    outs = {o.get("name"): o.get("price") for o in clob.get("outcomes", [])}
-    return outs.get("Yes"), outs.get("No")
-
 def fetch_gamma_markets(limit=1000, max_pages=30):
     print("📱 Fetching Polymarket markets (Gamma)…", flush=True)
     markets, offset, pages = [], 0, 0
@@ -83,28 +77,37 @@ def main():
 
         clob = fetch_clob(mid)
         yes, no = (None, None)
-        if clob:
-            yes, no = clob_prices(clob)
+        outcomes = clob.get("outcomes", []) if clob else []
 
-        prob = (yes/100 + (1 - no/100)) / 2 if yes is not None and no is not None else None
+        # Estimate midpoint probability for charting if binary market
+        if len(outcomes) == 2 and all(o.get("price") is not None for o in outcomes):
+            yes_price = outcomes[0]["price"]
+            no_price = outcomes[1]["price"]
+            prob = (yes_price/100 + (1 - no_price/100)) / 2
+        else:
+            prob = None
+
         rows_s.append({
             "market_id":  mid,
             "price":      round(prob, 4) if prob is not None else None,
-            "yes_bid":    yes/100 if yes is not None else None,
-            "no_bid":     no/100  if no  is not None else None,
+            "yes_bid":    None,
+            "no_bid":     None,
             "volume":     float(g.get("volume24Hr") or 0),
             "liquidity":  float(g.get("liquidity") or 0),
             "timestamp":  ts,
             "source":     "polymarket_clob",
         })
 
-        if yes is not None and no is not None:
-            rows_o.extend([
-                {"market_id": mid, "outcome_name": "Yes", "price": yes/100,
-                 "volume": None, "timestamp": ts, "source": "polymarket_clob"},
-                {"market_id": mid, "outcome_name": "No", "price": 1 - no/100,
-                 "volume": None, "timestamp": ts, "source": "polymarket_clob"},
-            ])
+        # Add each outcome as a separate row
+        for outcome in outcomes:
+            rows_o.append({
+                "market_id":    mid,
+                "outcome_name": outcome.get("name"),
+                "price":        outcome.get("price") / 100 if outcome.get("price") is not None else None,
+                "volume":       None,
+                "timestamp":    ts,
+                "source":       "polymarket_clob",
+            })
 
     print("📏 Writing rows to Supabase…", flush=True)
     insert_to_supabase("markets", rows_m)
