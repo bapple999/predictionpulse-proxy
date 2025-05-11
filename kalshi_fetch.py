@@ -1,16 +1,15 @@
-# kalshi_fetch.py – full metadata + initial snapshot loader for Kalshi
+# kalshi_fetch.py – updated to paginate beyond 1000 safely
 
 import os
 import requests
 from datetime import datetime
 from common import insert_to_supabase
 
-# Config
 SUPABASE_URL = os.environ.get('SUPABASE_URL')
-SERVICE_KEY  = os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
+SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
 HEADERS_KALSHI = {'Authorization': f"Bearer {os.environ.get('KALSHI_API_KEY')}"}
 
-EVENTS_URL  = 'https://api.elections.kalshi.com/trade-api/v2/events'
+EVENTS_URL = 'https://api.elections.kalshi.com/trade-api/v2/events'
 MARKETS_URL = 'https://api.elections.kalshi.com/trade-api/v2/markets'
 
 def safe_ts(val):
@@ -24,29 +23,28 @@ def fetch_events():
     print(f'🔍 Retrieved {len(events)} events', flush=True)
     return {e.get('ticker'): e for e in events if e.get('ticker')}
 
-def fetch_all_markets(limit=1000):
+def fetch_all_markets(limit=1000, max_pages=50):
     print('📡 Fetching Kalshi markets (paged)…', flush=True)
-    markets, seen, offset = [], set(), 0
-    while True:
+    markets, seen, offset, pages = [], set(), 0, 0
+    while pages < max_pages:
         resp = requests.get(
             MARKETS_URL,
             headers=HEADERS_KALSHI,
             params={'limit': limit, 'offset': offset},
             timeout=15
         )
-        if resp.status_code in (502, 504):
-            print(f'⚠️ Kalshi error at offset {offset}, stopping', flush=True)
-            break
         resp.raise_for_status()
         batch = resp.json().get('markets', [])
         if not batch:
             break
-        tickers = [m.get('ticker') for m in batch if m.get('ticker')]
-        if any(t in seen for t in tickers):
-            break
-        seen.update(tickers)
-        markets.extend(batch)
+
+        new_batch = [m for m in batch if m.get('ticker') not in seen]
+        seen.update(m.get('ticker') for m in new_batch if m.get('ticker'))
+        markets.extend(new_batch)
         offset += limit
+        pages += 1
+        print(f'⏱ Retrieved {len(new_batch):4} new markets (offset {offset})', flush=True)
+
         if len(batch) < limit:
             break
     print(f'🔍 Total markets fetched: {len(markets)}', flush=True)
@@ -67,46 +65,49 @@ def main():
 
         ev = events.get(m.get('event_ticker')) or {}
         yes = m.get('yes_bid')
-        no  = m.get('no_bid')
+        no = m.get('no_bid')
         prob = ((yes + (1 - no)) / 2) if yes is not None and no is not None else None
 
-        market_title = m.get('title') or m.get('description') or ''
-        event_title  = ev.get('title') or ev.get('name') or ''
-
         rows_m.append({
-            'market_id':          ticker,
-            'market_name':        market_title,
+            'market_id': ticker,
+            'market_name': m.get('title') or m.get('description') or '',
             'market_description': m.get('description') or '',
-            'event_name':         event_title,
-            'event_ticker':       m.get('event_ticker') or '',
-            'expiration':         safe_ts(m.get('expiration')),
-            'tags':               m.get('tags') if m.get('tags') is not None else [],
-            'source':             'kalshi',
-            'status':             m.get('status') or '',
+            'event_name': ev.get('title') or ev.get('name') or '',
+            'event_ticker': m.get('event_ticker') or '',
+            'expiration': safe_ts(m.get('expiration')),
+            'tags': m.get('tags') if m.get('tags') is not None else [],
+            'source': 'kalshi',
+            'status': m.get('status') or '',
         })
 
         rows_s.append({
-            'market_id':  ticker,
-            'price':      round(prob, 4) if prob is not None else None,
-            'yes_bid':    yes,
-            'no_bid':     no,
-            'volume':     m.get('volume'),
-            'liquidity':  m.get('open_interest'),
-            'timestamp':  now_ts,
-            'source':     'kalshi',
+            'market_id': ticker,
+            'price': round(prob, 4) if prob is not None else None,
+            'yes_bid': yes,
+            'no_bid': no,
+            'volume': m.get('volume'),
+            'liquidity': m.get('open_interest'),
+            'timestamp': now_ts,
+            'source': 'kalshi',
         })
-
-        # Treat each binary market as a candidate outcome if under the same event
-        candidate_name = market_title.replace(event_title, '').strip(' -') or market_title
 
         if yes is not None:
             rows_o.append({
-                'market_id':    ticker,
-                'outcome_name': candidate_name,
-                'price':        yes,
-                'volume':       None,
-                'timestamp':    now_ts,
-                'source':       'kalshi',
+                'market_id': ticker,
+                'outcome_name': 'Yes',
+                'price': yes,
+                'volume': None,
+                'timestamp': now_ts,
+                'source': 'kalshi',
+            })
+        if no is not None:
+            rows_o.append({
+                'market_id': ticker,
+                'outcome_name': 'No',
+                'price': 1 - no,
+                'volume': None,
+                'timestamp': now_ts,
+                'source': 'kalshi',
             })
 
     print('💾 Upserting markets…', flush=True)
