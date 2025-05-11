@@ -76,16 +76,17 @@ def main():
         })
 
         clob = fetch_clob(mid)
-        yes, no = (None, None)
         outcomes = clob.get("outcomes", []) if clob else []
 
-        # Estimate midpoint probability for charting if binary market
-        if len(outcomes) == 2 and all(o.get("price") is not None for o in outcomes):
-            yes_price = outcomes[0]["price"]
-            no_price = outcomes[1]["price"]
-            prob = (yes_price/100 + (1 - no_price/100)) / 2
-        else:
-            prob = None
+        # Estimate midpoint probability for binary market if possible
+        prob = None
+        if len(outcomes) == 2:
+            try:
+                prices = [o.get("price") for o in outcomes if o.get("price") is not None]
+                if len(prices) == 2:
+                    prob = (prices[0]/100 + (1 - prices[1]/100)) / 2
+            except Exception as e:
+                print(f"⚠️ Error calculating prob for market {mid}: {e}")
 
         rows_s.append({
             "market_id":  mid,
@@ -98,16 +99,21 @@ def main():
             "source":     "polymarket_clob",
         })
 
-        # Add each outcome as a separate row
+        if not outcomes:
+            print(f"⚠️ No outcomes returned for market {mid}")
+
         for outcome in outcomes:
-            rows_o.append({
-                "market_id":    mid,
-                "outcome_name": outcome.get("name"),
-                "price":        outcome.get("price") / 100 if outcome.get("price") is not None else None,
-                "volume":       None,
-                "timestamp":    ts,
-                "source":       "polymarket_clob",
-            })
+            name = outcome.get("name")
+            price = outcome.get("price")
+            if name and price is not None:
+                rows_o.append({
+                    "market_id":    mid,
+                    "outcome_name": name,
+                    "price":        price / 100,
+                    "volume":       None,
+                    "timestamp":    ts,
+                    "source":       "polymarket_clob",
+                })
 
     print("📏 Writing rows to Supabase…", flush=True)
     insert_to_supabase("markets", rows_m)
