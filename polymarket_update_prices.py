@@ -32,7 +32,11 @@ def load_market_ids(now_iso: str):
     resp = requests.get(url, headers=SUPA_HEADERS, timeout=15)
     resp.raise_for_status()
     rows = resp.json()
-    return [r["market_id"] for r in rows if r.get("expiration", "") > now_iso]
+    filtered = [r["market_id"] for r in rows if r.get("expiration") is not None and r["expiration"] > now_iso]
+    skipped = len(rows) - len(filtered)
+    if skipped:
+        print(f"⚠️ Skipped {skipped} rows with null expiration")
+    return filtered
 
 def main():
     ts = datetime.utcnow().isoformat() + "Z"
