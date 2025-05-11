@@ -14,11 +14,7 @@ SUPA_HEADERS = {
 
 CLOB_ENDPOINT = "https://clob.polymarket.com/markets/{}"
 
-def clob_prices(clob: dict):
-    if "yesPrice" in clob and "noPrice" in clob:
-        return clob["yesPrice"], clob["noPrice"]
-    outs = {o.get("name"): o.get("price") for o in clob.get("outcomes", [])}
-    return outs.get("Yes"), outs.get("No")
+# Fetch full CLOB for a market
 
 def fetch_clob(mid: str):
     r = requests.get(CLOB_ENDPOINT.format(mid), timeout=10)
@@ -43,48 +39,46 @@ def main():
     now_iso = datetime.utcnow().isoformat()
 
     market_ids = load_market_ids(now_iso)
-    print(f"📈 Loaded {len(market_ids)} active markets", flush=True)
+    print(f"📊 Loaded {len(market_ids)} active markets", flush=True)
 
     snapshots, outcomes = [], []
 
     for mid in market_ids:
         clob = fetch_clob(mid)
-        yes, no = (None, None)
-        if clob:
-            yes, no = clob_prices(clob)
+        if not clob:
+            continue
 
-        prob = (yes/100 + (1 - no/100)) / 2 if yes is not None and no is not None else None
+        clob_outcomes = clob.get("outcomes", [])
+
+        # Estimate midpoint probability if binary market
+        if len(clob_outcomes) == 2 and all(o.get("price") is not None for o in clob_outcomes):
+            yes_price = clob_outcomes[0]["price"]
+            no_price = clob_outcomes[1]["price"]
+            prob = (yes_price/100 + (1 - no_price/100)) / 2
+        else:
+            prob = None
 
         snapshots.append({
             "market_id": mid,
             "price":      round(prob, 4) if prob is not None else None,
-            "yes_bid":    yes/100 if yes is not None else None,
-            "no_bid":     no/100  if no  is not None else None,
+            "yes_bid":    None,
+            "no_bid":     None,
             "volume":     None,
             "liquidity":  None,
             "timestamp":  ts,
             "source":     "polymarket_clob",
         })
 
-        if prob is not None:
-            outcomes.extend([
-                {
-                    "market_id":    mid,
-                    "outcome_name": "Yes",
-                    "price":        round(prob, 4),
-                    "volume":       None,
-                    "timestamp":    ts,
-                    "source":       "polymarket_clob",
-                },
-                {
-                    "market_id":    mid,
-                    "outcome_name": "No",
-                    "price":        round(1 - prob, 4),
-                    "volume":       None,
-                    "timestamp":    ts,
-                    "source":       "polymarket_clob",
-                },
-            ])
+        # Insert all outcomes from clob
+        for outcome in clob_outcomes:
+            outcomes.append({
+                "market_id":    mid,
+                "outcome_name": outcome.get("name"),
+                "price":        outcome.get("price") / 100 if outcome.get("price") is not None else None,
+                "volume":       None,
+                "timestamp":    ts,
+                "source":       "polymarket_clob",
+            })
 
     print("💾 Writing snapshots to Supabase…", flush=True)
     insert_to_supabase("market_snapshots", snapshots, conflict_key=None)
