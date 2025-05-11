@@ -1,4 +1,4 @@
-// script.js – merged view: group by event_name + trend, volume, expiration, charting
+// script.js – grouped event market view with toggles
 
 const SUPABASE_URL = "https://oedvfgnnheevwhpubvzf.supabase.co";
 const SUPABASE_KEY = "YOUR_PUBLIC_ANON_KEY_HERE";
@@ -19,7 +19,6 @@ async function loadMarkets() {
     return;
   }
 
-  // Group by event_name
   const grouped = data.reduce((acc, entry) => {
     const group = entry.markets?.event_name || "Other";
     if (!acc[group]) acc[group] = [];
@@ -31,9 +30,15 @@ async function loadMarkets() {
   tableContainer.innerHTML = "";
 
   for (const [eventName, entries] of Object.entries(grouped)) {
-    const header = document.createElement("tr");
-    header.innerHTML = `<td colspan="6"><strong>${eventName}</strong></td>`;
-    tableContainer.appendChild(header);
+    const sectionId = eventName.replace(/\s+/g, '-').toLowerCase();
+
+    const headerRow = document.createElement("tr");
+    headerRow.innerHTML = `
+      <td colspan="6">
+        <button class="toggle-btn" data-target="${sectionId}" style="margin-right: 0.5em;">➖</button>
+        <strong>${eventName}</strong>
+      </td>`;
+    tableContainer.appendChild(headerRow);
 
     const byMarket = groupBy(entries, 'market_id');
 
@@ -53,6 +58,8 @@ async function loadMarkets() {
       const volume = latest.volume ? `$${Number(latest.volume).toLocaleString()}` : "$0";
 
       const row = document.createElement("tr");
+      row.classList.add("event-section");
+      row.classList.add(`group-${sectionId}`);
       row.innerHTML = `
         <td>${marketName}</td>
         <td>${latest.source}</td>
@@ -68,6 +75,19 @@ async function loadMarkets() {
       tableContainer.appendChild(row);
     }
   }
+
+  document.querySelectorAll(".toggle-btn").forEach(button => {
+    button.addEventListener("click", () => {
+      const target = button.dataset.target;
+      const rows = document.querySelectorAll(`.group-${target}`);
+      const isCollapsed = button.textContent === "➕";
+
+      rows.forEach(row => {
+        row.style.display = isCollapsed ? "" : "none";
+      });
+      button.textContent = isCollapsed ? "➖" : "➕";
+    });
+  });
 }
 
 function hoursAgo(timestamp, hours) {
