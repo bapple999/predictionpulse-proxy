@@ -1,146 +1,142 @@
-// script.js – grouped event market view with toggles
+# kalshi_fetch.py – full metadata + initial snapshot loader for Kalshi (cursor pagination)
 
-const SUPABASE_URL = "https://oedvfgnnheevwhpubvzf.supabase.co";
-const SUPABASE_KEY = "YOUR_PUBLIC_ANON_KEY_HERE";
+import os
+import requests
+from datetime import datetime
+from common import insert_to_supabase
 
-let chart;
+# --- Supabase config (server‑side / CI) --------------------------------------
+SUPABASE_URL  = os.environ.get("SUPABASE_URL")
+SERVICE_KEY   = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 
-async function loadMarkets() {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/market_snapshots?select=market_id,source,price,volume,timestamp,markets(market_name,event_name,expiration)&order=timestamp.desc&limit=10000`, {
-    headers: {
-      apikey: SUPABASE_KEY,
-      Authorization: `Bearer ${SUPABASE_KEY}`
-    }
-  });
-
-  const data = await res.json();
-  if (!data.length) {
-    document.getElementById("emptyMessage").style.display = "block";
-    return;
-  }
-
-  const grouped = data.reduce((acc, entry) => {
-    const group = entry.markets?.event_name || "Other";
-    if (!acc[group]) acc[group] = [];
-    acc[group].push(entry);
-    return acc;
-  }, {});
-
-  const tableContainer = document.getElementById("marketTable");
-  tableContainer.innerHTML = "";
-
-  for (const [eventName, entries] of Object.entries(grouped)) {
-    const sectionId = eventName.replace(/\s+/g, '-').toLowerCase();
-
-    const headerRow = document.createElement("tr");
-    headerRow.innerHTML = `
-      <td colspan="6">
-        <button class="toggle-btn" data-target="${sectionId}" style="margin-right: 0.5em;">➖</button>
-        <strong>${eventName}</strong>
-      </td>`;
-    tableContainer.appendChild(headerRow);
-
-    const byMarket = groupBy(entries, 'market_id');
-
-    for (const [marketId, snapshots] of Object.entries(byMarket)) {
-      const latest = snapshots[0];
-      const previous = snapshots.find(e => hoursAgo(e.timestamp, 24));
-
-      const price = latest.price;
-      const priceDisplay = price !== null ? `${(price * 100).toFixed(1)}%` : "-";
-
-      const price24h = previous?.price ?? null;
-      const priceChange = price !== null && price24h !== null ? ((price - price24h) * 100).toFixed(2) + "%" : "—";
-      const trendArrow = priceChange.includes("-") ? "⬇️" : priceChange === "—" ? "" : "⬆️";
-
-      const marketName = latest.markets?.market_name || marketId;
-      const expiration = latest.markets?.expiration ? new Date(latest.markets.expiration).toLocaleDateString() : "—";
-      const volume = latest.volume ? `$${Number(latest.volume).toLocaleString()}` : "$0";
-
-      const row = document.createElement("tr");
-      row.classList.add("event-section");
-      row.classList.add(`group-${sectionId}`);
-      row.innerHTML = `
-        <td>${marketName}</td>
-        <td>${latest.source}</td>
-        <td>${priceDisplay}</td>
-        <td>${volume}</td>
-        <td>${expiration}</td>
-        <td>${trendArrow} ${priceChange}</td>
-      `;
-      row.dataset.source = latest.source;
-      row.dataset.marketId = marketId;
-
-      row.addEventListener("click", () => drawChart(snapshots.slice().reverse(), marketName));
-      tableContainer.appendChild(row);
-    }
-  }
-
-  document.querySelectorAll(".toggle-btn").forEach(button => {
-    button.addEventListener("click", () => {
-      const target = button.dataset.target;
-      const rows = document.querySelectorAll(`.group-${target}`);
-      const isCollapsed = button.textContent === "➕";
-
-      rows.forEach(row => {
-        row.style.display = isCollapsed ? "" : "none";
-      });
-      button.textContent = isCollapsed ? "➖" : "➕";
-    });
-  });
+# --- Kalshi API --------------------------------------------------------------
+HEADERS_KALSHI = {
+    "Authorization": f"Bearer {os.environ.get('KALSHI_API_KEY')}",
+    "Content-Type":  "application/json",
 }
+EVENTS_URL  = "https://api.elections.kalshi.com/trade-api/v2/events"
+MARKETS_URL = "https://api.elections.kalshi.com/trade-api/v2/markets"
 
-function hoursAgo(timestamp, hours) {
-  const time = new Date(timestamp).getTime();
-  const now = Date.now();
-  return now - time >= hours * 60 * 60 * 1000;
-}
+# -----------------------------------------------------------------------------
 
-function groupBy(arr, key) {
-  return arr.reduce((acc, obj) => {
-    const k = obj[key];
-    if (!acc[k]) acc[k] = [];
-    acc[k].push(obj);
-    return acc;
-  }, {});
-}
+def safe_ts(val: str | None):
+    """Return ISO string or None (for empty timestamp fields)."""
+    return val.strip() if val else None
 
-function drawChart(entries, label) {
-  const ctx = document.getElementById("trendChart").getContext("2d");
-  const labels = entries.map(e => new Date(e.timestamp).toLocaleString());
-  const data = entries.map(e => e.price !== null ? (e.price * 100).toFixed(2) : null);
+# -----------------------------------------------------------------------------
+# Fetch all events once so we can enrich markets with event_name
+# -----------------------------------------------------------------------------
 
-  if (chart) chart.destroy();
-  chart = new Chart(ctx, {
-    type: "line",
-    data: {
-      labels,
-      datasets: [{
-        label: `Price Trend – ${label}`,
-        data,
-        borderColor: "blue",
-        fill: false
-      }]
-    },
-    options: {
-      responsive: true,
-      plugins: { legend: { display: true } },
-      scales: {
-        y: { beginAtZero: true, max: 100 }
-      }
-    }
-  });
-}
+def fetch_events() -> dict[str, dict]:
+    print("📡 Fetching Kalshi events…", flush=True)
+    r = requests.get(EVENTS_URL, headers=HEADERS_KALSHI, timeout=15)
+    r.raise_for_status()
+    events = r.json().get("events", [])
+    print(f"🔍 Retrieved {len(events)} events", flush=True)
+    return {e.get("ticker"): e for e in events if e.get("ticker")}
 
-document.addEventListener("DOMContentLoaded", () => {
-  loadMarkets();
+# -----------------------------------------------------------------------------
+# Cursor‑based pagination (no 1000‑market cap)
+# -----------------------------------------------------------------------------
 
-  document.querySelectorAll(".filters button").forEach(button => {
-    button.addEventListener("click", () => {
-      const filter = button.dataset.filter;
-      document.querySelectorAll("tbody tr").forEach(row => {
-        row.style.display = filter === "all" || row.dataset.source === filter ? "" : "none";
-      });
-    });
-  });
-});
+def fetch_all_markets(limit: int = 1000) -> list[dict]:
+    print("📡 Fetching Kalshi markets via cursor…", flush=True)
+    markets, cursor = [], None
+    page = 0
+    while True:
+        params = {"limit": limit}
+        if cursor:
+            params["cursor"] = cursor
+        r = requests.get(MARKETS_URL, headers=HEADERS_KALSHI, params=params, timeout=20)
+        r.raise_for_status()
+        data   = r.json()
+        batch  = data.get("markets", [])
+        cursor = data.get("cursor")  # will be None on last page
+        if not batch:
+            break
+        markets.extend(batch)
+        page += 1
+        print(f"⏱  page {page:<3} | +{len(batch):4} markets | next cursor = {cursor}", flush=True)
+        if not cursor:
+            break
+    print(f"🔍 Total markets fetched: {len(markets)}", flush=True)
+    return markets
+
+# -----------------------------------------------------------------------------
+# Main ingestion routine
+# -----------------------------------------------------------------------------
+
+def main():
+    events      = fetch_events()
+    raw_markets = fetch_all_markets()
+    print(f"🏆 Markets to ingest: {len(raw_markets)}", flush=True)
+
+    now_ts = datetime.utcnow().isoformat() + "Z"
+    rows_m, rows_s, rows_o = [], [], []
+
+    for m in raw_markets:
+        ticker = m.get("ticker")
+        if not ticker:
+            continue
+
+        ev   = events.get(m.get("event_ticker")) or {}
+        yes  = m.get("yes_bid")
+        no   = m.get("no_bid")
+        prob = ((yes + (1 - no)) / 2) if yes is not None and no is not None else None
+
+        # --- markets table ----------------------------------------------------
+        rows_m.append({
+            "market_id":          ticker,
+            "market_name":        m.get("title") or m.get("description") or "",
+            "market_description": m.get("description") or "",
+            "event_name":         ev.get("title") or ev.get("name") or "",
+            "event_ticker":       m.get("event_ticker") or "",
+            "expiration":         safe_ts(m.get("expiration")),
+            "tags":               m.get("tags") or [],
+            "source":             "kalshi",
+            "status":             m.get("status") or "",
+        })
+
+        # --- snapshots table --------------------------------------------------
+        rows_s.append({
+            "market_id": ticker,
+            "price":     round(prob, 4) if prob is not None else None,
+            "yes_bid":   yes,
+            "no_bid":    no,
+            "volume":    m.get("volume"),
+            "liquidity": m.get("open_interest"),
+            "timestamp": now_ts,
+            "source":    "kalshi",
+        })
+
+        # --- outcomes table ---------------------------------------------------
+        if yes is not None:
+            rows_o.append({
+                "market_id":    ticker,
+                "outcome_name": "Yes",
+                "price":        yes,
+                "volume":       None,
+                "timestamp":    now_ts,
+                "source":       "kalshi",
+            })
+        if no is not None:
+            rows_o.append({
+                "market_id":    ticker,
+                "outcome_name": "No",
+                "price":        1 - no,
+                "volume":       None,
+                "timestamp":    now_ts,
+                "source":       "kalshi",
+            })
+
+    # --- push to Supabase -----------------------------------------------------
+    print("💾 Upserting markets…", flush=True)
+    insert_to_supabase("markets", rows_m)
+    print("💾 Writing snapshots…", flush=True)
+    insert_to_supabase("market_snapshots", rows_s, conflict_key=None)
+    print("💾 Writing outcomes…", flush=True)
+    insert_to_supabase("market_outcomes", rows_o, conflict_key=None)
+    print(f"✅ Markets {len(rows_m)} | Snapshots {len(rows_s)} | Outcomes {len(rows_o)}", flush=True)
+
+if __name__ == "__main__":
+    main()
