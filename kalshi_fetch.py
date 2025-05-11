@@ -1,122 +1,146 @@
-# kalshi_fetch.py – updated to paginate beyond 1000 safely
+// script.js – grouped event market view with toggles
 
-import os
-import requests
-from datetime import datetime
-from common import insert_to_supabase
+const SUPABASE_URL = "https://oedvfgnnheevwhpubvzf.supabase.co";
+const SUPABASE_KEY = "YOUR_PUBLIC_ANON_KEY_HERE";
 
-SUPABASE_URL = os.environ.get('SUPABASE_URL')
-SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
-HEADERS_KALSHI = {'Authorization': f"Bearer {os.environ.get('KALSHI_API_KEY')}"}
+let chart;
 
-EVENTS_URL = 'https://api.elections.kalshi.com/trade-api/v2/events'
-MARKETS_URL = 'https://api.elections.kalshi.com/trade-api/v2/markets'
+async function loadMarkets() {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/market_snapshots?select=market_id,source,price,volume,timestamp,markets(market_name,event_name,expiration)&order=timestamp.desc&limit=10000`, {
+    headers: {
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${SUPABASE_KEY}`
+    }
+  });
 
-def safe_ts(val):
-    return val if val and val.strip() else None
+  const data = await res.json();
+  if (!data.length) {
+    document.getElementById("emptyMessage").style.display = "block";
+    return;
+  }
 
-def fetch_events():
-    print('📡 Fetching Kalshi events…', flush=True)
-    resp = requests.get(EVENTS_URL, headers=HEADERS_KALSHI, timeout=15)
-    resp.raise_for_status()
-    events = resp.json().get('events', [])
-    print(f'🔍 Retrieved {len(events)} events', flush=True)
-    return {e.get('ticker'): e for e in events if e.get('ticker')}
+  const grouped = data.reduce((acc, entry) => {
+    const group = entry.markets?.event_name || "Other";
+    if (!acc[group]) acc[group] = [];
+    acc[group].push(entry);
+    return acc;
+  }, {});
 
-def fetch_all_markets(limit=1000, max_pages=50):
-    print('📡 Fetching Kalshi markets (paged)…', flush=True)
-    markets, seen, offset, pages = [], set(), 0, 0
-    while pages < max_pages:
-        resp = requests.get(
-            MARKETS_URL,
-            headers=HEADERS_KALSHI,
-            params={'limit': limit, 'offset': offset},
-            timeout=15
-        )
-        resp.raise_for_status()
-        batch = resp.json().get('markets', [])
-        if not batch:
-            break
+  const tableContainer = document.getElementById("marketTable");
+  tableContainer.innerHTML = "";
 
-        new_batch = [m for m in batch if m.get('ticker') not in seen]
-        seen.update(m.get('ticker') for m in new_batch if m.get('ticker'))
-        markets.extend(new_batch)
-        offset += limit
-        pages += 1
-        print(f'⏱ Retrieved {len(new_batch):4} new markets (offset {offset})', flush=True)
+  for (const [eventName, entries] of Object.entries(grouped)) {
+    const sectionId = eventName.replace(/\s+/g, '-').toLowerCase();
 
-        if len(batch) < limit:
-            break
-    print(f'🔍 Total markets fetched: {len(markets)}', flush=True)
-    return markets
+    const headerRow = document.createElement("tr");
+    headerRow.innerHTML = `
+      <td colspan="6">
+        <button class="toggle-btn" data-target="${sectionId}" style="margin-right: 0.5em;">➖</button>
+        <strong>${eventName}</strong>
+      </td>`;
+    tableContainer.appendChild(headerRow);
 
-def main():
-    events = fetch_events()
-    raw_markets = fetch_all_markets()
-    print(f'🏆 Markets to ingest: {len(raw_markets)}', flush=True)
+    const byMarket = groupBy(entries, 'market_id');
 
-    now_ts = datetime.utcnow().isoformat() + 'Z'
-    rows_m, rows_s, rows_o = [], [], []
+    for (const [marketId, snapshots] of Object.entries(byMarket)) {
+      const latest = snapshots[0];
+      const previous = snapshots.find(e => hoursAgo(e.timestamp, 24));
 
-    for m in raw_markets:
-        ticker = m.get('ticker')
-        if not ticker:
-            continue
+      const price = latest.price;
+      const priceDisplay = price !== null ? `${(price * 100).toFixed(1)}%` : "-";
 
-        ev = events.get(m.get('event_ticker')) or {}
-        yes = m.get('yes_bid')
-        no = m.get('no_bid')
-        prob = ((yes + (1 - no)) / 2) if yes is not None and no is not None else None
+      const price24h = previous?.price ?? null;
+      const priceChange = price !== null && price24h !== null ? ((price - price24h) * 100).toFixed(2) + "%" : "—";
+      const trendArrow = priceChange.includes("-") ? "⬇️" : priceChange === "—" ? "" : "⬆️";
 
-        rows_m.append({
-            'market_id': ticker,
-            'market_name': m.get('title') or m.get('description') or '',
-            'market_description': m.get('description') or '',
-            'event_name': ev.get('title') or ev.get('name') or '',
-            'event_ticker': m.get('event_ticker') or '',
-            'expiration': safe_ts(m.get('expiration')),
-            'tags': m.get('tags') if m.get('tags') is not None else [],
-            'source': 'kalshi',
-            'status': m.get('status') or '',
-        })
+      const marketName = latest.markets?.market_name || marketId;
+      const expiration = latest.markets?.expiration ? new Date(latest.markets.expiration).toLocaleDateString() : "—";
+      const volume = latest.volume ? `$${Number(latest.volume).toLocaleString()}` : "$0";
 
-        rows_s.append({
-            'market_id': ticker,
-            'price': round(prob, 4) if prob is not None else None,
-            'yes_bid': yes,
-            'no_bid': no,
-            'volume': m.get('volume'),
-            'liquidity': m.get('open_interest'),
-            'timestamp': now_ts,
-            'source': 'kalshi',
-        })
+      const row = document.createElement("tr");
+      row.classList.add("event-section");
+      row.classList.add(`group-${sectionId}`);
+      row.innerHTML = `
+        <td>${marketName}</td>
+        <td>${latest.source}</td>
+        <td>${priceDisplay}</td>
+        <td>${volume}</td>
+        <td>${expiration}</td>
+        <td>${trendArrow} ${priceChange}</td>
+      `;
+      row.dataset.source = latest.source;
+      row.dataset.marketId = marketId;
 
-        if yes is not None:
-            rows_o.append({
-                'market_id': ticker,
-                'outcome_name': 'Yes',
-                'price': yes,
-                'volume': None,
-                'timestamp': now_ts,
-                'source': 'kalshi',
-            })
-        if no is not None:
-            rows_o.append({
-                'market_id': ticker,
-                'outcome_name': 'No',
-                'price': 1 - no,
-                'volume': None,
-                'timestamp': now_ts,
-                'source': 'kalshi',
-            })
+      row.addEventListener("click", () => drawChart(snapshots.slice().reverse(), marketName));
+      tableContainer.appendChild(row);
+    }
+  }
 
-    print('💾 Upserting markets…', flush=True)
-    insert_to_supabase('markets', rows_m)
-    print('💾 Writing snapshots…', flush=True)
-    insert_to_supabase('market_snapshots', rows_s, conflict_key=None)
-    print('💾 Writing outcomes…', flush=True)
-    insert_to_supabase('market_outcomes', rows_o, conflict_key=None)
-    print(f'✅ Markets {len(rows_m)} | Snapshots {len(rows_s)} | Outcomes {len(rows_o)}', flush=True)
+  document.querySelectorAll(".toggle-btn").forEach(button => {
+    button.addEventListener("click", () => {
+      const target = button.dataset.target;
+      const rows = document.querySelectorAll(`.group-${target}`);
+      const isCollapsed = button.textContent === "➕";
 
-if __name__ == '__main__':
-    main()
+      rows.forEach(row => {
+        row.style.display = isCollapsed ? "" : "none";
+      });
+      button.textContent = isCollapsed ? "➖" : "➕";
+    });
+  });
+}
+
+function hoursAgo(timestamp, hours) {
+  const time = new Date(timestamp).getTime();
+  const now = Date.now();
+  return now - time >= hours * 60 * 60 * 1000;
+}
+
+function groupBy(arr, key) {
+  return arr.reduce((acc, obj) => {
+    const k = obj[key];
+    if (!acc[k]) acc[k] = [];
+    acc[k].push(obj);
+    return acc;
+  }, {});
+}
+
+function drawChart(entries, label) {
+  const ctx = document.getElementById("trendChart").getContext("2d");
+  const labels = entries.map(e => new Date(e.timestamp).toLocaleString());
+  const data = entries.map(e => e.price !== null ? (e.price * 100).toFixed(2) : null);
+
+  if (chart) chart.destroy();
+  chart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [{
+        label: `Price Trend – ${label}`,
+        data,
+        borderColor: "blue",
+        fill: false
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: true } },
+      scales: {
+        y: { beginAtZero: true, max: 100 }
+      }
+    }
+  });
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  loadMarkets();
+
+  document.querySelectorAll(".filters button").forEach(button => {
+    button.addEventListener("click", () => {
+      const filter = button.dataset.filter;
+      document.querySelectorAll("tbody tr").forEach(row => {
+        row.style.display = filter === "all" || row.dataset.source === filter ? "" : "none";
+      });
+    });
+  });
+});
