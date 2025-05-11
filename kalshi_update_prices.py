@@ -1,4 +1,4 @@
-# kalshi_update_prices.py – lightweight snapshot updater for Kalshi
+# kalshi_update_prices.py – lightweight snapshot updater for Kalshi
 
 import os
 import requests
@@ -16,7 +16,7 @@ SUPA_HEADERS = {
 MARKETS_URL = "https://api.elections.kalshi.com/trade-api/v2/markets"
 
 def fetch_all_markets(limit=1000):
-    print("📡 Fetching updated Kalshi prices (paged)…", flush=True)
+    print("📱 Fetching updated Kalshi prices (paged)…", flush=True)
     markets, seen, offset = [], set(), 0
     while True:
         resp = requests.get(
@@ -36,7 +36,7 @@ def fetch_all_markets(limit=1000):
         offset += limit
         if len(batch) < limit:
             break
-    print(f"🔄 Updated market count: {len(markets)}", flush=True)
+    print(f"♻️ Updated market count: {len(markets)}", flush=True)
     return markets
 
 def main():
@@ -66,29 +66,21 @@ def main():
             "source":     "kalshi",
         })
 
-        if yes_bid is not None and no_bid is not None:
-            outcomes.extend([
-                {
-                    "market_id":    mid,
-                    "outcome_name": "Yes",
-                    "price":        yes_bid,
-                    "volume":       None,
-                    "timestamp":    ts,
-                    "source":       "kalshi",
-                },
-                {
-                    "market_id":    mid,
-                    "outcome_name": "No",
-                    "price":        1 - no_bid,
-                    "volume":       None,
-                    "timestamp":    ts,
-                    "source":       "kalshi",
-                },
-            ])
+        title = m.get("title") or m.get("description") or mid
 
-    print("💾 Writing snapshots to Supabase…", flush=True)
+        if yes_bid is not None:
+            outcomes.append({
+                "market_id":    mid,
+                "outcome_name": title,
+                "price":        yes_bid,
+                "volume":       None,
+                "timestamp":    ts,
+                "source":       "kalshi",
+            })
+
+    print("📏 Writing snapshots to Supabase…", flush=True)
     insert_to_supabase("market_snapshots", snapshots, conflict_key=None)
-    print("💾 Writing outcomes to Supabase…", flush=True)
+    print("📏 Writing outcomes to Supabase…", flush=True)
     insert_to_supabase("market_outcomes",  outcomes, conflict_key=None)
     print(f"✅ Snapshots {len(snapshots)} | Outcomes {len(outcomes)}", flush=True)
 
