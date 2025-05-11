@@ -1,7 +1,8 @@
 // script.js – grouped event market view with toggles
 
 const SUPABASE_URL = "https://oedvfgnnheevwhpubvzf.supabase.co";
-const SUPABASE_KEY = "YOUR_PUBLIC_ANON_KEY_HERE";
+// Public anon key (safe for client‑side)
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9lZHZmZ25uaGVldndocHVidnpmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ2ODM4MDYsImV4cCI6MjA2MDI1OTgwNn0.xWP63veWq8vWtMvpLwQw8kx0IACs0QBIVzqQYW9wviw";
 
 let chart;
 
@@ -10,7 +11,8 @@ async function loadMarkets() {
     headers: {
       apikey: SUPABASE_KEY,
       Authorization: `Bearer ${SUPABASE_KEY}`
-    }
+    },
+    mode: "cors"
   });
 
   const data = await res.json();
@@ -58,8 +60,7 @@ async function loadMarkets() {
       const volume = latest.volume ? `$${Number(latest.volume).toLocaleString()}` : "$0";
 
       const row = document.createElement("tr");
-      row.classList.add("event-section");
-      row.classList.add(`group-${sectionId}`);
+      row.classList.add("event-section", `group-${sectionId}`);
       row.innerHTML = `
         <td>${marketName}</td>
         <td>${latest.source}</td>
@@ -76,31 +77,25 @@ async function loadMarkets() {
     }
   }
 
-  document.querySelectorAll(".toggle-btn").forEach(button => {
-    button.addEventListener("click", () => {
-      const target = button.dataset.target;
+  // Toggle expand / collapse
+  document.querySelectorAll(".toggle-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const target = btn.dataset.target;
       const rows = document.querySelectorAll(`.group-${target}`);
-      const isCollapsed = button.textContent === "➕";
-
-      rows.forEach(row => {
-        row.style.display = isCollapsed ? "" : "none";
-      });
-      button.textContent = isCollapsed ? "➖" : "➕";
+      const collapsed = btn.textContent === "➕";
+      rows.forEach(r => r.style.display = collapsed ? "" : "none");
+      btn.textContent = collapsed ? "➖" : "➕";
     });
   });
 }
 
-function hoursAgo(timestamp, hours) {
-  const time = new Date(timestamp).getTime();
-  const now = Date.now();
-  return now - time >= hours * 60 * 60 * 1000;
+function hoursAgo(ts, hrs) {
+  return Date.now() - new Date(ts).getTime() >= hrs * 3600 * 1000;
 }
 
 function groupBy(arr, key) {
   return arr.reduce((acc, obj) => {
-    const k = obj[key];
-    if (!acc[k]) acc[k] = [];
-    acc[k].push(obj);
+    (acc[obj[key]] ||= []).push(obj);
     return acc;
   }, {});
 }
@@ -108,36 +103,20 @@ function groupBy(arr, key) {
 function drawChart(entries, label) {
   const ctx = document.getElementById("trendChart").getContext("2d");
   const labels = entries.map(e => new Date(e.timestamp).toLocaleString());
-  const data = entries.map(e => e.price !== null ? (e.price * 100).toFixed(2) : null);
-
+  const data   = entries.map(e => e.price !== null ? (e.price * 100).toFixed(2) : null);
   if (chart) chart.destroy();
   chart = new Chart(ctx, {
     type: "line",
-    data: {
-      labels,
-      datasets: [{
-        label: `Price Trend – ${label}`,
-        data,
-        borderColor: "blue",
-        fill: false
-      }]
-    },
-    options: {
-      responsive: true,
-      plugins: { legend: { display: true } },
-      scales: {
-        y: { beginAtZero: true, max: 100 }
-      }
-    }
+    data: { labels, datasets: [{ label: `Price Trend – ${label}`, data, borderColor: "blue", fill: false }] },
+    options: { responsive: true, plugins:{ legend:{ display:true } }, scales:{ y:{ beginAtZero:true, max:100 } } }
   });
 }
 
 document.addEventListener("DOMContentLoaded", () => {
   loadMarkets();
-
-  document.querySelectorAll(".filters button").forEach(button => {
-    button.addEventListener("click", () => {
-      const filter = button.dataset.filter;
+  document.querySelectorAll(".filters button").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const filter = btn.dataset.filter;
       document.querySelectorAll("tbody tr").forEach(row => {
         row.style.display = filter === "all" || row.dataset.source === filter ? "" : "none";
       });
