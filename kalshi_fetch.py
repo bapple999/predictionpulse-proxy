@@ -70,11 +70,14 @@ def main():
         no  = m.get('no_bid')
         prob = ((yes + (1 - no)) / 2) if yes is not None and no is not None else None
 
+        market_title = m.get('title') or m.get('description') or ''
+        event_title  = ev.get('title') or ev.get('name') or ''
+
         rows_m.append({
             'market_id':          ticker,
-            'market_name':        m.get('title') or m.get('description') or '',
+            'market_name':        market_title,
             'market_description': m.get('description') or '',
-            'event_name':         ev.get('title') or ev.get('name') or '',
+            'event_name':         event_title,
             'event_ticker':       m.get('event_ticker') or '',
             'expiration':         safe_ts(m.get('expiration')),
             'tags':               m.get('tags') if m.get('tags') is not None else [],
@@ -93,20 +96,14 @@ def main():
             'source':     'kalshi',
         })
 
+        # Treat each binary market as a candidate outcome if under the same event
+        candidate_name = market_title.replace(event_title, '').strip(' -') or market_title
+
         if yes is not None:
             rows_o.append({
                 'market_id':    ticker,
-                'outcome_name': 'Yes',
+                'outcome_name': candidate_name,
                 'price':        yes,
-                'volume':       None,
-                'timestamp':    now_ts,
-                'source':       'kalshi',
-            })
-        if no is not None:
-            rows_o.append({
-                'market_id':    ticker,
-                'outcome_name': 'No',
-                'price':        1 - no,
                 'volume':       None,
                 'timestamp':    now_ts,
                 'source':       'kalshi',
