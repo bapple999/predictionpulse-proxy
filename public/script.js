@@ -1,13 +1,13 @@
 // script.js – grouped event market view with robust guards
 
 const SUPABASE_URL = "https://oedvfgnnheevwhpubvzf.supabase.co";
-// Public anon key (safe for client‑side)
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9lZHZmZ25uaGVldndocHVidnpmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ2ODM4MDYsImV4cCI6MjA2MDI1OTgwNn0.xWP63veWq8vWtMvpLwQw8kx0IACs0QBIVzqQYW9wviw";
 
 let chart;
 
 async function loadMarkets() {
   const url = `${SUPABASE_URL}/rest/v1/market_snapshots?select=market_id,source,price,volume,timestamp,markets!inner(market_name,event_name,expiration)&order=timestamp.desc&limit=500`;
+
   const res = await fetch(url, {
     headers: {
       apikey: SUPABASE_KEY,
@@ -15,20 +15,19 @@ async function loadMarkets() {
     },
     mode: "cors"
   });
-    headers: {
-      apikey: SUPABASE_KEY,
-      Authorization: `Bearer ${SUPABASE_KEY}`
-    },
-    mode: "cors"
-  });
+
+  if (!res.ok) {
+    console.error("Supabase error", await res.text());
+    return;
+  }
 
   const data = await res.json();
-  if (!data.length) {
+  if (data.length === 0) {
     document.getElementById("emptyMessage").style.display = "block";
     return;
   }
 
-  // ───── group rows by event (fallbacks ensure no "Other" spam) ─────
+  // ───── group rows by event ─────
   const grouped = data.reduce((acc, entry) => {
     const grp = entry.markets?.event_name || entry.markets?.market_name || entry.market_id.slice(0, 8);
     (acc[grp] ||= []).push(entry);
@@ -41,7 +40,6 @@ async function loadMarkets() {
   for (const [eventName, entries] of Object.entries(grouped)) {
     const sectionId = eventName.replace(/\s+/g, "-").toLowerCase();
 
-    // event header row with toggle
     table.insertAdjacentHTML("beforeend", `
       <tr>
         <td colspan="6">
@@ -50,41 +48,31 @@ async function loadMarkets() {
         </td>
       </tr>`);
 
-    // group snapshots by individual market
     const byMarket = groupBy(entries, "market_id");
 
     for (const [mid, snaps] of Object.entries(byMarket)) {
       const latest   = snaps[0];
       const previous = snaps.find(s => hoursAgo(s.timestamp, 24));
 
-      const price        = latest.price;
-      const priceDisplay = price == null ? "—" : `${(price * 100).toFixed(1)}%`;
-
-      const price24h   = previous?.price ?? null;
-      const changePct  = price != null && price24h != null ? ((price - price24h) * 100).toFixed(2) : null;
-      const priceChange= changePct == null ? "—" : `${changePct}%`;
-      const trendArrow = changePct == null ? "" : changePct.startsWith("-") ? "⬇️" : "⬆️";
-
-      const marketName = latest.markets?.market_name || mid;
-      const expiration = latest.markets?.expiration ? new Date(latest.markets.expiration).toLocaleDateString() : "—";
-      const volumeStr  = latest.volume == null ? "—" : `$${Number(latest.volume).toLocaleString()}`;
+      const priceDisplay = latest.price == null ? "—" : `${(latest.price * 100).toFixed(1)}%`;
+      const changePct    = latest.price != null && previous?.price != null ? ((latest.price - previous.price) * 100).toFixed(2) : null;
+      const priceChange  = changePct == null ? "—" : `${changePct}%`;
+      const trendArrow   = changePct == null ? "" : changePct.startsWith("-") ? "⬇️" : "⬆️";
 
       table.insertAdjacentHTML("beforeend", `
         <tr class="event-section group-${sectionId}" data-source="${latest.source}" data-market-id="${mid}">
-          <td>${marketName}</td>
+          <td>${latest.markets?.market_name || mid}</td>
           <td>${latest.source}</td>
           <td>${priceDisplay}</td>
-          <td>${volumeStr}</td>
-          <td>${expiration}</td>
+          <td>${latest.volume == null ? "—" : `$${Number(latest.volume).toLocaleString()}`}</td>
+          <td>${latest.markets?.expiration ? new Date(latest.markets.expiration).toLocaleDateString() : "—"}</td>
           <td>${trendArrow} ${priceChange}</td>
         </tr>`);
 
-      // click to draw trend chart
-      table.lastElementChild.onclick = () => drawChart(snaps.slice().reverse(), marketName);
+      table.lastElementChild.onclick = () => drawChart(snaps.slice().reverse(), latest.markets?.market_name || mid);
     }
   }
 
-  // ─── toggle expand/collapse ───
   document.querySelectorAll(".toggle-btn").forEach(btn => {
     btn.onclick = () => {
       const tgt = btn.dataset.target;
