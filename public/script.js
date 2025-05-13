@@ -1,4 +1,4 @@
-// script.js – tidy table, 24 h change, sortable headers (volume‑ordered)
+/*  script.js – volume‑ordered table with 24 h change & sortable headers  */
 
 const SUPABASE_URL = "https://oedvfgnnheevwhpubvzf.supabase.co";
 const SUPABASE_KEY =
@@ -6,56 +6,64 @@ const SUPABASE_KEY =
 
 let chart, sortKey = "volume", sortDir = "desc";
 
+/* ---------- tiny helper that throws on non‑2xx ---------- */
 function api(path) {
   return fetch(`${SUPABASE_URL}${path}`, {
     headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
     mode: "cors"
-  }).then(r => r.json());
+  }).then(async res => {
+    if (!res.ok) throw new Error(`Supabase ${res.status}: ${await res.text()}`);
+    return res.json();
+  });
 }
 
 async function loadMarkets() {
-  /* top 500 markets by 24 h volume */
-  let rows = await api(
-    `/rest/v1/latest_snapshots` +
-    `?select=market_id,source,price,volume,timestamp,market_name,event_name,expiration` +
-    `&order=volume.desc&limit=500`
-  );
+  try {
+    /* top 500 markets by 24 h volume */
+    let rows = await api(
+      `/rest/v1/latest_snapshots` +
+      `?select=market_id,source,price,volume,timestamp,market_name,event_name,expiration` +
+      `&order=volume.desc&limit=500`
+    );
 
-  /* remove zero‑volume rows */
-  rows = rows.filter(r => (r.volume || 0) > 0);
+    rows = rows.filter(r => (r.volume || 0) > 0);           // drop 0‑volume
 
-  /* map to compute 24 h change (one batched query) */
-  const idList = rows.map(r => `'${r.market_id}'`).join(",");
-  const since  = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+    /* ------- fetch one snapshot ≤ 24 h old for change calc ------- */
+    if (!rows.length) throw new Error("No rows after filter");
+    const idList = rows.map(r => `'${r.market_id}'`).join(",");
+    const since  = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
 
-  const prevRows = await api(
-    `/rest/v1/market_snapshots?select=market_id,price` +
-    `&market_id=in.(${idList})&timestamp=gt.${since}` +
-    `&order=timestamp.desc`
-  );
+    const prevRows = await api(
+      `/rest/v1/market_snapshots?select=market_id,price` +
+      `&market_id=in.(${idList})&timestamp=gt.${since}` +
+      `&order=timestamp.desc`
+    );
 
-  const prevPrice = {};
-  prevRows.forEach(p => prevPrice[p.market_id] ??= p.price);
+    const prevPrice = {};
+    prevRows.forEach(p => (prevPrice[p.market_id] ??= p.price));
 
-  /* enrich with clean price, 24 h change, clean source */
-  rows.forEach(r => {
-    r.cleanPrice = r.price != null && r.price >= 0 && r.price <= 1 ? r.price : null;
-    r.price24h   = prevPrice[r.market_id];
-    r.changePct  =
-      r.cleanPrice != null && r.price24h != null
-        ? ((r.cleanPrice - r.price24h) * 100).toFixed(2)
-        : null;
-    r.cleanSource = r.source.startsWith("polymarket") ? "polymarket" : r.source;
-  });
+    rows.forEach(r => {
+      r.cleanPrice = r.price != null && r.price >= 0 && r.price <= 1 ? r.price : null;
+      r.price24h   = prevPrice[r.market_id];
+      r.changePct =
+        r.cleanPrice != null && r.price24h != null
+          ? ((r.cleanPrice - r.price24h) * 100).toFixed(2)
+          : null;
+      r.cleanSource = r.source.startsWith("polymarket") ? "polymarket" : r.source;
+    });
 
-  renderTable(rows);
+    renderTable(rows);
+  } catch (err) {
+    console.error(err);
+    document.getElementById("emptyMessage").style.display = "block";
+  }
 }
 
+/* ---------- table render ---------- */
 function renderTable(rows) {
-  /* sort groups by total volume */
   const grouped = rows.reduce((acc, r) => {
-    const key = r.event_name || r.market_name || r.market_id.slice(0, 8);
-    (acc[key] ||= []).push(r);
+    const k = r.event_name || r.market_name || r.market_id.slice(0, 8);
+    (acc[k] ||= []).push(r);
     return acc;
   }, {});
 
@@ -69,22 +77,19 @@ function renderTable(rows) {
   tbody.innerHTML = "";
 
   groupArr.forEach(([eventName, list]) => {
-    /* sort rows inside group per global sortKey/Dir */
     list.sort((a, b) => {
-      const valA = a[sortKey] ?? -Infinity;
-      const valB = b[sortKey] ?? -Infinity;
-      return sortDir === "desc" ? valB - valA : valA - valB;
+      const va = a[sortKey] ?? -Infinity;
+      const vb = b[sortKey] ?? -Infinity;
+      return sortDir === "desc" ? vb - va : va - vb;
     });
 
-    const sectionId = eventName.replace(/\s+/g, "-").toLowerCase();
+    const secId = eventName.replace(/\s+/g, "-").toLowerCase();
 
-    /* only show header if >1 markets (categorical) */
     if (list.length > 1) {
       tbody.insertAdjacentHTML(
         "beforeend",
         `<tr><td colspan="6">
-           <button class="toggle-btn" data-target="${sectionId}"
-             style="margin-right:.5em;">➖</button>
+           <button class="toggle-btn" data-target="${secId}" style="margin-right:.5em;">➖</button>
            <strong>${eventName}</strong>
          </td></tr>`
       );
@@ -96,15 +101,11 @@ function renderTable(rows) {
       const changeDisp =
         r.changePct == null ? "—" : `${r.changePct}%`;
       const arrow =
-        r.changePct == null
-          ? ""
-          : r.changePct.startsWith("-")
-          ? "⬇️"
-          : "⬆️";
+        r.changePct == null ? "" : r.changePct.startsWith("-") ? "⬇️" : "⬆️";
 
       tbody.insertAdjacentHTML(
         "beforeend",
-        `<tr class="event-section group-${sectionId}"
+        `<tr class="event-section group-${secId}"
              data-source="${r.cleanSource}" data-market-id="${r.market_id}">
            <td>${r.market_name || r.market_id}</td>
            <td>${r.cleanSource}</td>
@@ -120,7 +121,6 @@ function renderTable(rows) {
     });
   });
 
-  /* collapsible categorical groups */
   document.querySelectorAll(".toggle-btn").forEach(btn => {
     btn.onclick = () => {
       const rows = document.querySelectorAll(`.group-${btn.dataset.target}`);
@@ -131,18 +131,7 @@ function renderTable(rows) {
   });
 }
 
-/* sort header click */
-document.querySelectorAll("th[data-sort]").forEach(th => {
-  th.style.cursor = "pointer";
-  th.onclick = () => {
-    const key = th.dataset.sort;
-    sortDir = sortKey === key && sortDir === "desc" ? "asc" : "desc";
-    sortKey = key;
-    loadMarkets();
-  };
-});
-
-/* draw history chart */
+/* ---------- chart ---------- */
 async function drawChart(marketId, label) {
   const rows = await api(
     `/rest/v1/market_snapshots?select=timestamp,price&market_id=eq.${marketId}&order=timestamp.asc`
@@ -152,27 +141,35 @@ async function drawChart(marketId, label) {
   const data   = rows.map(r => r.price == null ? null : (r.price * 100).toFixed(2));
 
   if (chart) chart.destroy();
-  chart = new Chart(
-    document.getElementById("trendChart"),
-    { type:"line",
-      data:{ labels,
-        datasets:[{ label:`Price Trend – ${label}`, data, borderColor:"blue", fill:false }] },
-      options:{ responsive:true, plugins:{legend:{display:true}},
-        scales:{ y:{ beginAtZero:true, max:100 } } } }
-  );
+  chart = new Chart(document.getElementById("trendChart"), {
+    type: "line",
+    data: { labels, datasets: [{ label:`Price Trend – ${label}`, data, borderColor:"blue", fill:false }] },
+    options: { responsive:true, plugins:{legend:{display:true}}, scales:{y:{beginAtZero:true,max:100}} }
+  });
 }
 
+/* ---------- init ---------- */
 document.addEventListener("DOMContentLoaded", () => {
   loadMarkets();
 
-  /* filter buttons */
+  /* simple Kalshi / Polymarket filter buttons */
   document.querySelectorAll(".filters button").forEach(btn => {
     btn.onclick = () => {
-      const filter = btn.dataset.filter;
+      const f = btn.dataset.filter;
       document.querySelectorAll("tbody tr.event-section").forEach(row => {
-        row.style.display =
-          filter === "all" || row.dataset.source === filter ? "" : "none";
+        row.style.display = f === "all" || row.dataset.source === f ? "" : "none";
       });
+    };
+  });
+
+  /* clickable sort headers */
+  document.querySelectorAll("th[data-sort]").forEach(th => {
+    th.style.cursor = "pointer";
+    th.onclick = () => {
+      const key = th.dataset.sort;
+      sortDir = sortKey === key && sortDir === "desc" ? "asc" : "desc";
+      sortKey = key;
+      loadMarkets();
     };
   });
 });
