@@ -1,4 +1,11 @@
+# netlify.toml  ← put this at the root of your repo
 [[headers]]
 for = "/*"
   [headers.values]
-  Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-eval'"
+  Content-Security-Policy = """
+    default-src 'self';
+    script-src  'self' https://cdn.jsdelivr.net 'unsafe-eval';
+    style-src   'self' 'unsafe-inline';
+    connect-src 'self' https://oedvfgnnheevwhpubvzf.supabase.co;
+    img-src     'self' data:;
+  """
