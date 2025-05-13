@@ -1,7 +1,8 @@
-// script.js – tidy table, 24 h change, sortable headers
+// script.js – tidy table, 24 h change, sortable headers (volume‑ordered)
 
 const SUPABASE_URL = "https://oedvfgnnheevwhpubvzf.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9lZHZmZ25uaGVldndocHVidnpmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ2ODM4MDYsImV4cCI6MjA2MDI1OTgwNn0.xWP63veWq8vWtMvpLwQw8kx0IACs0QBIVzqQYW9wviw";
+const SUPABASE_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9lZHZmZ25uaGVldndocHVidnpmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ2ODM4MDYsImV4cCI6MjA2MDI1OTgwNn0.xWP63veWq8vWtMvpLwQw8kx0IACs0QBIVzqQYW9wviw";
 
 let chart, sortKey = "volume", sortDir = "desc";
 
@@ -13,14 +14,17 @@ function api(path) {
 }
 
 async function loadMarkets() {
-  /* latest snapshot per market */
+  /* top 500 markets by 24 h volume */
+  let rows = await api(
+    `/rest/v1/latest_snapshots` +
+    `?select=market_id,source,price,volume,timestamp,market_name,event_name,expiration` +
+    `&order=volume.desc&limit=500`
+  );
 
-let rows = await api(
-       `/rest/v1/latest_snapshots?select=…&order=volume.desc&limit=500`
-   );
-rows = rows.filter(r => (r.volume || 0) > 0);   // 🚫 skip 0‑volume markets
+  /* remove zero‑volume rows */
+  rows = rows.filter(r => (r.volume || 0) > 0);
 
-  /* map to compute 24 h change in one extra batched query */
+  /* map to compute 24 h change (one batched query) */
   const idList = rows.map(r => `'${r.market_id}'`).join(",");
   const since  = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
 
@@ -33,7 +37,7 @@ rows = rows.filter(r => (r.volume || 0) > 0);   // 🚫 skip 0‑volume markets
   const prevPrice = {};
   prevRows.forEach(p => prevPrice[p.market_id] ??= p.price);
 
-  /* enrich rows with change and clean fields */
+  /* enrich with clean price, 24 h change, clean source */
   rows.forEach(r => {
     r.cleanPrice = r.price != null && r.price >= 0 && r.price <= 1 ? r.price : null;
     r.price24h   = prevPrice[r.market_id];
