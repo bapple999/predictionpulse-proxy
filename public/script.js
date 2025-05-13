@@ -1,12 +1,16 @@
-// script.js – grouped event market view with robust guards
+// script.js – grouped event‑market view, now reading from latest_snapshots
 
 const SUPABASE_URL = "https://oedvfgnnheevwhpubvzf.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9lZHZmZ25uaGVldndocHVidnpmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ2ODM4MDYsImV4cCI6MjA2MDI1OTgwNn0.xWP63veWq8vWtMvpLwQw8kx0IACs0QBIVzqQYW9wviw";
+const SUPABASE_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9lZHZmZ25uaGVldndocHVidnpmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ2ODM4MDYsImV4cCI6MjA2MDI1OTgwNn0.xWP63veWq8vWtMvpLwQw8kx0IACs0QBIVzqQYW9wviw";
 
 let chart;
 
 async function loadMarkets() {
-  const url = `${SUPABASE_URL}/rest/v1/market_snapshots?select=market_id,source,price,volume,timestamp,markets!inner(market_name,event_name,expiration)&order=timestamp.desc&limit=500`;
+  const url =
+    `${SUPABASE_URL}/rest/v1/latest_snapshots` +
+    `?select=market_id,source,price,volume,timestamp,` +
+    `market_name,event_name,expiration&limit=300`;
 
   const res = await fetch(url, {
     headers: {
@@ -17,7 +21,8 @@ async function loadMarkets() {
   });
 
   if (!res.ok) {
-    console.error("Supabase error", await res.text());
+    console.error("Supabase error →", await res.text());
+    document.getElementById("emptyMessage").style.display = "block";
     return;
   }
 
@@ -27,65 +32,96 @@ async function loadMarkets() {
     return;
   }
 
-  // ───── group rows by event ─────
-  const grouped = data.reduce((acc, entry) => {
-    const grp = entry.markets?.event_name || entry.markets?.market_name || entry.market_id.slice(0, 8);
-    (acc[grp] ||= []).push(entry);
+  /* ─── group rows by event (fallbacks ensure no giant “Other”) ─── */
+  const grouped = data.reduce((acc, row) => {
+    const key =
+      row.event_name ||
+      row.market_name ||
+      row.market_id.slice(0, 8);
+    (acc[key] ||= []).push(row);
     return acc;
   }, {});
 
   const table = document.getElementById("marketTable");
   table.innerHTML = "";
 
-  for (const [eventName, entries] of Object.entries(grouped)) {
+  for (const [eventName, rows] of Object.entries(grouped)) {
     const sectionId = eventName.replace(/\s+/g, "-").toLowerCase();
 
-    table.insertAdjacentHTML("beforeend", `
-      <tr>
-        <td colspan="6">
-          <button class="toggle-btn" data-target="${sectionId}" style="margin-right:.5em;">➖</button>
-          <strong>${eventName}</strong>
-        </td>
-      </tr>`);
+    /* event header row with toggle */
+    table.insertAdjacentHTML(
+      "beforeend",
+      `<tr>
+         <td colspan="6">
+           <button class="toggle-btn" data-target="${sectionId}" style="margin-right:.5em;">➖</button>
+           <strong>${eventName}</strong>
+         </td>
+       </tr>`
+    );
 
-    const byMarket = groupBy(entries, "market_id");
+    /* rows are already “latest per market” */
+    rows.forEach(r => {
+      const priceDisp =
+        r.price == null ? "—" : `${(r.price * 100).toFixed(1)}%`;
 
-    for (const [mid, snaps] of Object.entries(byMarket)) {
-      const latest   = snaps[0];
-      const previous = snaps.find(s => hoursAgo(s.timestamp, 24));
+      table.insertAdjacentHTML(
+        "beforeend",
+        `<tr class="event-section group-${sectionId}"
+             data-source="${r.source}" data-market-id="${r.market_id}">
+           <td>${r.market_name || r.market_id}</td>
+           <td>${r.source}</td>
+           <td>${priceDisp}</td>
+           <td>${r.volume == null ? "—" : `$${Number(r.volume).toLocaleString()}`}</td>
+           <td>${r.expiration ? new Date(r.expiration).toLocaleDateString() : "—"}</td>
+           <td>—</td>
+         </tr>`
+      );
 
-      const priceDisplay = latest.price == null ? "—" : `${(latest.price * 100).toFixed(1)}%`;
-      const changePct    = latest.price != null && previous?.price != null ? ((latest.price - previous.price) * 100).toFixed(2) : null;
-      const priceChange  = changePct == null ? "—" : `${changePct}%`;
-      const trendArrow   = changePct == null ? "" : changePct.startsWith("-") ? "⬇️" : "⬆️";
-
-      table.insertAdjacentHTML("beforeend", `
-        <tr class="event-section group-${sectionId}" data-source="${latest.source}" data-market-id="${mid}">
-          <td>${latest.markets?.market_name || mid}</td>
-          <td>${latest.source}</td>
-          <td>${priceDisplay}</td>
-          <td>${latest.volume == null ? "—" : `$${Number(latest.volume).toLocaleString()}`}</td>
-          <td>${latest.markets?.expiration ? new Date(latest.markets.expiration).toLocaleDateString() : "—"}</td>
-          <td>${trendArrow} ${priceChange}</td>
-        </tr>`);
-
-      table.lastElementChild.onclick = () => drawChart(snaps.slice().reverse(), latest.markets?.market_name || mid);
-    }
+      /* click row → fetch full history & draw chart */
+      table.lastElementChild.onclick = () =>
+        drawChart(r.market_id, r.market_name || r.market_id);
+    });
   }
 
+  /* expand / collapse groups */
   document.querySelectorAll(".toggle-btn").forEach(btn => {
     btn.onclick = () => {
       const tgt = btn.dataset.target;
       const rows = document.querySelectorAll(`.group-${tgt}`);
       const collapsed = btn.textContent === "➕";
-      rows.forEach(r => r.style.display = collapsed ? "" : "none");
+      rows.forEach(r => (r.style.display = collapsed ? "" : "none"));
       btn.textContent = collapsed ? "➖" : "➕";
     };
   });
 }
 
-function hoursAgo(ts, hrs) {
-  return Date.now() - new Date(ts).getTime() >= hrs * 3600 * 1000;
+/* fetch full history for a market to populate the trend chart */
+async function drawChart(marketId, label) {
+  const url =
+    `${SUPABASE_URL}/rest/v1/market_snapshots` +
+    `?select=timestamp,price&market_id=eq.${marketId}` +
+    `&order=timestamp.asc`;
+
+  const res = await fetch(url, {
+    headers: {
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${SUPABASE_KEY}`
+    },
+    mode: "cors"
+  });
+
+  const rows = await res.json();
+  const ctx = document.getElementById("trendChart").getContext("2d");
+  const labels = rows.map(r => new Date(r.timestamp).toLocaleString());
+  const data   = rows.map(r => r.price == null ? null : (r.price * 100).toFixed(2));
+
+  if (chart) chart.destroy();
+  chart = new Chart(ctx, {
+    type: "line",
+    data: { labels, datasets: [{ label:`Price Trend – ${label}`, data, borderColor:"blue", fill:false }] },
+    options:{ responsive:true, plugins:{ legend:{display:true} },
+      scales:{ y:{ beginAtZero:true, max:100 } } }
+  });
 }
 
 function groupBy(arr, key) {
@@ -95,24 +131,17 @@ function groupBy(arr, key) {
   }, {});
 }
 
-function drawChart(entries, label) {
-  const ctx = document.getElementById("trendChart").getContext("2d");
-  const labels = entries.map(e => new Date(e.timestamp).toLocaleString());
-  const data   = entries.map(e => e.price == null ? null : (e.price * 100).toFixed(2));
-  if (chart) chart.destroy();
-  chart = new Chart(ctx, {
-    type: "line",
-    data: { labels, datasets:[{ label:`Price Trend – ${label}`, data, borderColor:"blue", fill:false }] },
-    options:{ responsive:true, plugins:{ legend:{display:true} }, scales:{ y:{ beginAtZero:true, max:100 } } }
-  });
-}
-
 document.addEventListener("DOMContentLoaded", () => {
   loadMarkets();
-  document.querySelectorAll(".filters button").forEach(btn => btn.onclick = () => {
-    const filter = btn.dataset.filter;
-    document.querySelectorAll("tbody tr.event-section").forEach(row => {
-      row.style.display = filter === "all" || row.dataset.source === filter ? "" : "none";
-    });
+
+  /* simple source filter buttons */
+  document.querySelectorAll(".filters button").forEach(btn => {
+    btn.onclick = () => {
+      const filter = btn.dataset.filter;
+      document.querySelectorAll("tbody tr.event-section").forEach(row => {
+        row.style.display =
+          filter === "all" || row.dataset.source === filter ? "" : "none";
+      });
+    };
   });
 });
