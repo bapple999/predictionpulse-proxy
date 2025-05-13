@@ -6,7 +6,7 @@ const SUPABASE_KEY =
 
 let chart, sortKey = "volume", sortDir = "desc";
 
-/* ---------- tiny helper that throws on non‑2xx ---------- */
+/* ---------- helper that throws on non‑2xx ---------- */
 function api(path) {
   return fetch(`${SUPABASE_URL}${path}`, {
     headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
@@ -19,16 +19,17 @@ function api(path) {
 
 async function loadMarkets() {
   try {
-    /* top 500 markets by 24 h volume */
+    /* newest 1 000 snapshots – cheap query (index on timestamp) */
     let rows = await api(
       `/rest/v1/latest_snapshots` +
       `?select=market_id,source,price,volume,timestamp,market_name,event_name,expiration` +
-      `&order=volume.desc&limit=500`
+      `&order=timestamp.desc&limit=1000`
     );
 
-    rows = rows.filter(r => (r.volume || 0) > 0);           // drop 0‑volume
+    rows = rows.filter(r => (r.volume || 0) > 0);   // ignore zero‑volume
+    rows.sort((a, b) => (b.volume || 0) - (a.volume || 0)); // <- client sort
 
-    /* ------- fetch one snapshot ≤ 24 h old for change calc ------- */
+    /* ----------- one snapshot ≤ 24 h old for change calc ----------- */
     if (!rows.length) throw new Error("No rows after filter");
     const idList = rows.map(r => `'${r.market_id}'`).join(",");
     const since  = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
@@ -131,7 +132,7 @@ function renderTable(rows) {
   });
 }
 
-/* ---------- chart ---------- */
+/* ---------- history chart ---------- */
 async function drawChart(marketId, label) {
   const rows = await api(
     `/rest/v1/market_snapshots?select=timestamp,price&market_id=eq.${marketId}&order=timestamp.asc`
@@ -152,7 +153,7 @@ async function drawChart(marketId, label) {
 document.addEventListener("DOMContentLoaded", () => {
   loadMarkets();
 
-  /* simple Kalshi / Polymarket filter buttons */
+  /* Kalshi / Polymarket filter buttons */
   document.querySelectorAll(".filters button").forEach(btn => {
     btn.onclick = () => {
       const f = btn.dataset.filter;
