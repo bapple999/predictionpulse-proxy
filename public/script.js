@@ -14,10 +14,11 @@ function api(path) {
 
 async function loadMarkets() {
   /* latest snapshot per market */
-  const rows = await api(
-    `/rest/v1/latest_snapshots?select=market_id,source,price,volume,timestamp,` +
-    `market_name,event_name,expiration&limit=300`
-  );
+
+let rows = await api(
+       `/rest/v1/latest_snapshots?select=…&order=volume.desc&limit=500`
+   );
+rows = rows.filter(r => (r.volume || 0) > 0);   // 🚫 skip 0‑volume markets
 
   /* map to compute 24 h change in one extra batched query */
   const idList = rows.map(r => `'${r.market_id}'`).join(",");
