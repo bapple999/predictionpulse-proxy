@@ -80,9 +80,21 @@ def main():
             continue
 
         ev   = events.get(m.get("event_ticker")) or {}
-        yes  = m.get("yes_bid")
-        no   = m.get("no_bid")
-        prob = ((yes + (1 - no)) / 2) if yes is not None and no is not None else None
+            yes_bid = m.get("yes_bid")
+            no_bid  = m.get("no_bid")
+
+        if yes_bid is not None and no_bid is not None:
+            # Both quotes present → midpoint
+            prob = round((yes_bid + (1 - no_bid)) / 2, 4)
+        elif yes_bid is not None:
+            # Only YES side quoted
+            prob = round(yes_bid, 4)
+        elif no_bid is not None:
+            # Only NO side quoted
+            prob = round(1 - no_bid, 4)
+        else:
+            # No quotes at all
+            prob = None
 
         # --- markets table ----------------------------------------------------
         rows_m.append({
