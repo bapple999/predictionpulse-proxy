@@ -19,15 +19,15 @@ function api(path) {
 
 async function loadMarkets() {
   try {
-    /* newest 1 000 snapshots – cheap query (index on timestamp) */
+    /* newest 1 000 latest-rows – NO server-side sort */
     let rows = await api(
       `/rest/v1/latest_snapshots` +
       `?select=market_id,source,price,volume,timestamp,market_name,event_name,expiration` +
-      `&order=timestamp.desc&limit=1000`
+      `&limit=1000`
     );
 
-    rows = rows.filter(r => (r.volume || 0) > 0);   // ignore zero‑volume
-    rows.sort((a, b) => (b.volume || 0) - (a.volume || 0)); // <- client sort
+    rows = rows.filter(r => (r.volume || 0) > 0);
+    rows.sort((a, b) => (b.volume || 0) - (a.volume || 0));
 
     /* ----------- one snapshot ≤ 24 h old for change calc ----------- */
     if (!rows.length) throw new Error("No rows after filter");
