@@ -79,9 +79,9 @@ def main():
         if not ticker:
             continue
 
-        ev   = events.get(m.get("event_ticker")) or {}
-            yes_bid = m.get("yes_bid")
-            no_bid  = m.get("no_bid")
+        ev       = events.get(m.get("event_ticker")) or {}
+        yes_bid  = m.get("yes_bid")
+        no_bid   = m.get("no_bid")
 
         if yes_bid is not None and no_bid is not None:
             # Both quotes present → midpoint
@@ -113,8 +113,8 @@ def main():
         rows_s.append({
             "market_id": ticker,
             "price":     round(prob, 4) if prob is not None else None,
-            "yes_bid":   yes,
-            "no_bid":    no,
+            "yes_bid":   yes_bid,
+            "no_bid":    no_bid,
             "volume":    m.get("volume"),
             "liquidity": m.get("open_interest"),
             "timestamp": now_ts,
@@ -122,20 +122,20 @@ def main():
         })
 
         # --- outcomes table ---------------------------------------------------
-        if yes is not None:
+        if yes_bid is not None:
             rows_o.append({
                 "market_id":    ticker,
                 "outcome_name": "Yes",
-                "price":        yes,
+                "price":        yes_bid,
                 "volume":       None,
                 "timestamp":    now_ts,
                 "source":       "kalshi",
             })
-        if no is not None:
+        if no_bid is not None:
             rows_o.append({
                 "market_id":    ticker,
                 "outcome_name": "No",
-                "price":        1 - no,
+                "price":        1 - no_bid,
                 "volume":       None,
                 "timestamp":    now_ts,
                 "source":       "kalshi",
