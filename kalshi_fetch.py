@@ -1,15 +1,13 @@
-# kalshi_fetch.py – full metadata + initial snapshot loader for Kalshi (cursor pagination)
+# kalshi_fetch.py – rewritten to ingest correct last price, USD volume, and expiration
 
 import os
 import requests
 from datetime import datetime
 from common import insert_to_supabase
 
-# --- Supabase config (server‑side / CI) --------------------------------------
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 
-# --- Kalshi API --------------------------------------------------------------
 HEADERS_KALSHI = {
     "Authorization": f"Bearer {os.environ.get('KALSHI_API_KEY')}",
     "Content-Type": "application/json",
@@ -17,15 +15,8 @@ HEADERS_KALSHI = {
 EVENTS_URL = "https://api.elections.kalshi.com/trade-api/v2/events"
 MARKETS_URL = "https://api.elections.kalshi.com/trade-api/v2/markets"
 
-# -----------------------------------------------------------------------------
-
 def safe_ts(val: str | None):
-    """Return ISO string or None (for empty timestamp fields)."""
     return val.strip() if val else None
-
-# -----------------------------------------------------------------------------
-# Fetch all events once so we can enrich markets with event_name
-# -----------------------------------------------------------------------------
 
 def fetch_events() -> dict[str, dict]:
     print("📡 Fetching Kalshi events…", flush=True)
@@ -34,10 +25,6 @@ def fetch_events() -> dict[str, dict]:
     events = r.json().get("events", [])
     print(f"🔍 Retrieved {len(events)} events", flush=True)
     return {e.get("ticker"): e for e in events if e.get("ticker")}
-
-# -----------------------------------------------------------------------------
-# Cursor‑based pagination (no 1000‑market cap)
-# -----------------------------------------------------------------------------
 
 def fetch_all_markets(limit: int = 1000) -> list[dict]:
     print("📡 Fetching Kalshi markets via cursor…", flush=True)
@@ -51,7 +38,7 @@ def fetch_all_markets(limit: int = 1000) -> list[dict]:
         r.raise_for_status()
         data = r.json()
         batch = data.get("markets", [])
-        cursor = data.get("cursor")  # will be None on last page
+        cursor = data.get("cursor")
         if not batch:
             break
         markets.extend(batch)
@@ -61,10 +48,6 @@ def fetch_all_markets(limit: int = 1000) -> list[dict]:
             break
     print(f"🔍 Total markets fetched: {len(markets)}", flush=True)
     return markets
-
-# -----------------------------------------------------------------------------
-# Main ingestion routine
-# -----------------------------------------------------------------------------
 
 def main():
     events = fetch_events()
@@ -80,17 +63,13 @@ def main():
             continue
 
         ev = events.get(m.get("event_ticker")) or {}
+
+        last_price = m.get("last_price")
         yes_bid = m.get("yes_bid")
         no_bid = m.get("no_bid")
-
-        if yes_bid is not None and no_bid is not None:
-            prob = round((yes_bid + (1 - no_bid)) / 2, 4)
-        elif yes_bid is not None:
-            prob = round(yes_bid, 4)
-        elif no_bid is not None:
-            prob = round(1 - no_bid, 4)
-        else:
-            prob = None
+        volume = m.get("volume")
+        liquidity = m.get("open_interest")
+        expiration = safe_ts(m.get("expiration"))
 
         # --- markets table ----------------------------------------------------
         rows_m.append({
@@ -99,7 +78,7 @@ def main():
             "market_description": m.get("description") or "",
             "event_name": ev.get("title") or ev.get("name") or "",
             "event_ticker": m.get("event_ticker") or "",
-            "expiration": safe_ts(m.get("expiration")),
+            "expiration": expiration,
             "tags": m.get("tags") or [],
             "source": "kalshi",
             "status": m.get("status") or "",
@@ -108,36 +87,26 @@ def main():
         # --- snapshots table --------------------------------------------------
         rows_s.append({
             "market_id": ticker,
-            "price": round(prob, 4) if prob is not None else None,
+            "price": last_price,
             "yes_bid": yes_bid,
             "no_bid": no_bid,
-            "volume": m.get("volume"),
-            "liquidity": m.get("open_interest"),
+            "volume": volume,
+            "liquidity": liquidity,
+            "expiration": expiration,
             "timestamp": now_ts,
             "source": "kalshi",
         })
 
         # --- outcomes table ---------------------------------------------------
-        if yes_bid is not None:
-            rows_o.append({
-                "market_id": ticker,
-                "outcome_name": "Yes",
-                "price": yes_bid,
-                "volume": None,
-                "timestamp": now_ts,
-                "source": "kalshi",
-            })
-        if no_bid is not None:
-            rows_o.append({
-                "market_id": ticker,
-                "outcome_name": "No",
-                "price": 1 - no_bid,
-                "volume": None,
-                "timestamp": now_ts,
-                "source": "kalshi",
-            })
+        rows_o.append({
+            "market_id": ticker,
+            "outcome_name": "Yes",
+            "price": last_price,
+            "volume": volume,
+            "timestamp": now_ts,
+            "source": "kalshi",
+        })
 
-    # --- push to Supabase -----------------------------------------------------
     print("💾 Upserting markets…", flush=True)
     insert_to_supabase("markets", rows_m)
     print("💾 Writing snapshots…", flush=True)
