@@ -6,15 +6,15 @@ from datetime import datetime
 from common import insert_to_supabase
 
 # --- Supabase config (server‑side / CI) --------------------------------------
-SUPABASE_URL  = os.environ.get("SUPABASE_URL")
-SERVICE_KEY   = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 
 # --- Kalshi API --------------------------------------------------------------
 HEADERS_KALSHI = {
     "Authorization": f"Bearer {os.environ.get('KALSHI_API_KEY')}",
-    "Content-Type":  "application/json",
+    "Content-Type": "application/json",
 }
-EVENTS_URL  = "https://api.elections.kalshi.com/trade-api/v2/events"
+EVENTS_URL = "https://api.elections.kalshi.com/trade-api/v2/events"
 MARKETS_URL = "https://api.elections.kalshi.com/trade-api/v2/markets"
 
 # -----------------------------------------------------------------------------
@@ -49,8 +49,8 @@ def fetch_all_markets(limit: int = 1000) -> list[dict]:
             params["cursor"] = cursor
         r = requests.get(MARKETS_URL, headers=HEADERS_KALSHI, params=params, timeout=20)
         r.raise_for_status()
-        data   = r.json()
-        batch  = data.get("markets", [])
+        data = r.json()
+        batch = data.get("markets", [])
         cursor = data.get("cursor")  # will be None on last page
         if not batch:
             break
@@ -67,7 +67,7 @@ def fetch_all_markets(limit: int = 1000) -> list[dict]:
 # -----------------------------------------------------------------------------
 
 def main():
-    events      = fetch_events()
+    events = fetch_events()
     raw_markets = fetch_all_markets()
     print(f"🏆 Markets to ingest: {len(raw_markets)}", flush=True)
 
@@ -79,66 +79,62 @@ def main():
         if not ticker:
             continue
 
-        ev       = events.get(m.get("event_ticker")) or {}
-        yes_bid  = m.get("yes_bid")
-        no_bid   = m.get("no_bid")
+        ev = events.get(m.get("event_ticker")) or {}
+        yes_bid = m.get("yes_bid")
+        no_bid = m.get("no_bid")
 
         if yes_bid is not None and no_bid is not None:
-            # Both quotes present → midpoint
             prob = round((yes_bid + (1 - no_bid)) / 2, 4)
         elif yes_bid is not None:
-            # Only YES side quoted
             prob = round(yes_bid, 4)
         elif no_bid is not None:
-            # Only NO side quoted
             prob = round(1 - no_bid, 4)
         else:
-            # No quotes at all
             prob = None
 
         # --- markets table ----------------------------------------------------
         rows_m.append({
-            "market_id":          ticker,
-            "market_name":        m.get("title") or m.get("description") or "",
+            "market_id": ticker,
+            "market_name": m.get("title") or m.get("description") or "",
             "market_description": m.get("description") or "",
-            "event_name":         ev.get("title") or ev.get("name") or "",
-            "event_ticker":       m.get("event_ticker") or "",
-            "expiration":         safe_ts(m.get("expiration")),
-            "tags":               m.get("tags") or [],
-            "source":             "kalshi",
-            "status":             m.get("status") or "",
+            "event_name": ev.get("title") or ev.get("name") or "",
+            "event_ticker": m.get("event_ticker") or "",
+            "expiration": safe_ts(m.get("expiration")),
+            "tags": m.get("tags") or [],
+            "source": "kalshi",
+            "status": m.get("status") or "",
         })
 
         # --- snapshots table --------------------------------------------------
         rows_s.append({
             "market_id": ticker,
-            "price":     round(prob, 4) if prob is not None else None,
-            "yes_bid":   yes_bid,
-            "no_bid":    no_bid,
-            "volume":    m.get("volume"),
+            "price": round(prob, 4) if prob is not None else None,
+            "yes_bid": yes_bid,
+            "no_bid": no_bid,
+            "volume": m.get("volume"),
             "liquidity": m.get("open_interest"),
             "timestamp": now_ts,
-            "source":    "kalshi",
+            "source": "kalshi",
         })
 
         # --- outcomes table ---------------------------------------------------
         if yes_bid is not None:
             rows_o.append({
-                "market_id":    ticker,
+                "market_id": ticker,
                 "outcome_name": "Yes",
-                "price":        yes_bid,
-                "volume":       None,
-                "timestamp":    now_ts,
-                "source":       "kalshi",
+                "price": yes_bid,
+                "volume": None,
+                "timestamp": now_ts,
+                "source": "kalshi",
             })
         if no_bid is not None:
             rows_o.append({
-                "market_id":    ticker,
+                "market_id": ticker,
                 "outcome_name": "No",
-                "price":        1 - no_bid,
-                "volume":       None,
-                "timestamp":    now_ts,
-                "source":       "kalshi",
+                "price": 1 - no_bid,
+                "volume": None,
+                "timestamp": now_ts,
+                "source": "kalshi",
             })
 
     # --- push to Supabase -----------------------------------------------------
