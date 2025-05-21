@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Prediction Pulse</title>
   <link rel="stylesheet" href="style.css">
-  <!-- Pre‑bundled Chart.js UMD build (no eval, CSP‑safe) -->
+  <!-- Pre‑bundled Chart.js UMD build (CSP-safe) -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -22,19 +22,12 @@
   <table>
     <thead>
       <tr>
-        <th>Market</th>
-        <th>Source</th>
-        <th>Price</th>
-        <th>Volume</th>
-        <th>Expiration</th>
-        <th>24h Change</th>
         <th data-sort="market_name">Market</th>
         <th data-sort="cleanSource">Source</th>
         <th data-sort="cleanPrice">Price</th>
         <th data-sort="volume">Volume</th>
         <th data-sort="expiration">Expiration</th>
         <th data-sort="changePct">24h Change</th>
-
       </tr>
     </thead>
     <tbody id="marketTable"></tbody>
