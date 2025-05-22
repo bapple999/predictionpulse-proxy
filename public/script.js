@@ -1,4 +1,4 @@
-const SUPABASE_URL = "https://oedvfgnnheevwhpubvzf.supabase.co";
+const SUPABASE_URL = "https://eypantouzmwgauobeywr.supabase.co";
 const SUPABASE_KEY = "your-key-here"; // 🔐 You can keep it in .env or obfuscate if exposed
 
 let chart, sortKey = "volume", sortDir = "desc";
