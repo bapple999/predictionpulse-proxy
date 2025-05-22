@@ -1,5 +1,5 @@
 const SUPABASE_URL = "https://eypantouzmwgauobeywr.supabase.co";
-const SUPABASE_KEY = "your-key-here"; // 🔐 You can keep it in .env or obfuscate if exposed
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV5cGFudG91em13Z2F1b2JleXdyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDc4Nzk5MzYsImV4cCI6MjA2MzQ1NTkzNn0.SyDUsU6IqkUqH8TLkNX8nNCYzcjZZ4CUvVqUzt1w8TI"; // 🔐 You can keep it in .env or obfuscate if exposed
 
 let chart, sortKey = "volume", sortDir = "desc";
 
