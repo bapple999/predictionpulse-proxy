@@ -1,4 +1,4 @@
-# polymarket_update_prices.py – lightweight top 200 snapshot updater
+# ✅ polymarket_update_prices.py – lightweight updater using YES price as market price
 
 import os
 import requests
@@ -27,10 +27,7 @@ def load_market_ids(now_iso: str):
     resp = requests.get(url, headers=SUPA_HEADERS, timeout=15)
     resp.raise_for_status()
     rows = resp.json()
-    filtered = [r["market_id"] for r in rows if r.get("expiration") is not None and r["expiration"] > now_iso]
-    skipped = len(rows) - len(filtered)
-    if skipped:
-        print(f"⚠️ Skipped {skipped} rows with null or past expiration")
+    filtered = [r["market_id"] for r in rows if r.get("expiration") and r["expiration"] > now_iso]
     return filtered
 
 def main():
@@ -38,7 +35,7 @@ def main():
     now_iso = datetime.utcnow().isoformat()
 
     market_ids = load_market_ids(now_iso)
-    print(f"📊 Loaded {len(market_ids)} active Polymarket markets (top by volume)", flush=True)
+    print(f"📊 Loaded {len(market_ids)} active Polymarket markets", flush=True)
 
     snapshots, outcomes = [], []
 
@@ -51,14 +48,13 @@ def main():
 
         if len(clob_outcomes) == 2 and all(o.get("price") is not None for o in clob_outcomes):
             yes_price = clob_outcomes[0]["price"]
-            no_price = clob_outcomes[1]["price"]
-            prob = (yes_price / 100 + (1 - no_price / 100)) / 2
+            price = yes_price / 100
         else:
-            prob = None
+            price = None
 
         snapshots.append({
             "market_id": mid,
-            "price":      round(prob, 4) if prob is not None else None,
+            "price":      round(price, 4) if price is not None else None,
             "yes_bid":    None,
             "no_bid":     None,
             "volume":     None,
@@ -77,11 +73,8 @@ def main():
                 "source":       "polymarket_clob",
             })
 
-    print("💾 Writing snapshots to Supabase…", flush=True)
     insert_to_supabase("market_snapshots", snapshots, conflict_key=None)
-    print("💾 Writing outcomes to Supabase…", flush=True)
-    insert_to_supabase("market_outcomes",  outcomes, conflict_key=None)
-    print(f"✅ Snapshots {len(snapshots)} | Outcomes {len(outcomes)}", flush=True)
+    insert_to_supabase("market_outcomes", outcomes, conflict_key=None)
 
 if __name__ == "__main__":
     main()
