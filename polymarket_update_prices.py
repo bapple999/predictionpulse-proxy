@@ -1,4 +1,5 @@
-# polymarket_update_prices.py – 5 min snapshot updater for Polymarket
+# polymarket_update_prices.py – lightweight top 200 snapshot updater
+
 import os
 import requests
 from datetime import datetime
@@ -14,8 +15,6 @@ SUPA_HEADERS = {
 
 CLOB_ENDPOINT = "https://clob.polymarket.com/markets/{}"
 
-# Fetch full CLOB for a market
-
 def fetch_clob(mid: str):
     r = requests.get(CLOB_ENDPOINT.format(mid), timeout=10)
     if r.status_code == 404:
@@ -24,14 +23,14 @@ def fetch_clob(mid: str):
     return r.json()
 
 def load_market_ids(now_iso: str):
-    url = f"{SUPABASE_URL}/rest/v1/markets?select=market_id,expiration"
+    url = f"{SUPABASE_URL}/rest/v1/markets?select=market_id,expiration,volume&order=volume.desc&limit=200"
     resp = requests.get(url, headers=SUPA_HEADERS, timeout=15)
     resp.raise_for_status()
     rows = resp.json()
     filtered = [r["market_id"] for r in rows if r.get("expiration") is not None and r["expiration"] > now_iso]
     skipped = len(rows) - len(filtered)
     if skipped:
-        print(f"⚠️ Skipped {skipped} rows with null expiration")
+        print(f"⚠️ Skipped {skipped} rows with null or past expiration")
     return filtered
 
 def main():
@@ -39,7 +38,7 @@ def main():
     now_iso = datetime.utcnow().isoformat()
 
     market_ids = load_market_ids(now_iso)
-    print(f"📊 Loaded {len(market_ids)} active markets", flush=True)
+    print(f"📊 Loaded {len(market_ids)} active Polymarket markets (top by volume)", flush=True)
 
     snapshots, outcomes = [], []
 
@@ -50,11 +49,10 @@ def main():
 
         clob_outcomes = clob.get("outcomes", [])
 
-        # Estimate midpoint probability if binary market
         if len(clob_outcomes) == 2 and all(o.get("price") is not None for o in clob_outcomes):
             yes_price = clob_outcomes[0]["price"]
             no_price = clob_outcomes[1]["price"]
-            prob = (yes_price/100 + (1 - no_price/100)) / 2
+            prob = (yes_price / 100 + (1 - no_price / 100)) / 2
         else:
             prob = None
 
@@ -69,7 +67,6 @@ def main():
             "source":     "polymarket_clob",
         })
 
-        # Insert all outcomes from clob
         for outcome in clob_outcomes:
             outcomes.append({
                 "market_id":    mid,
