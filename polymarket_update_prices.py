@@ -27,16 +27,13 @@ def load_market_ids(now_iso: str):
     resp = requests.get(url, headers=SUPA_HEADERS, timeout=15)
     resp.raise_for_status()
     rows = resp.json()
-    filtered = [r["market_id"] for r in rows if r.get("expiration") and r["expiration"] > now_iso]
-    return filtered
+    return [r["market_id"] for r in rows if r.get("expiration") and r["expiration"] > now_iso]
 
 def main():
     ts = datetime.utcnow().isoformat() + "Z"
     now_iso = datetime.utcnow().isoformat()
 
     market_ids = load_market_ids(now_iso)
-    print(f"📊 Loaded {len(market_ids)} active Polymarket markets", flush=True)
-
     snapshots, outcomes = [], []
 
     for mid in market_ids:
