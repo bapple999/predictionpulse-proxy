@@ -1,20 +1,61 @@
+# ✅ kalshi_fetch.py
+import os
+import requests
+from datetime import datetime
+from common import insert_to_supabase
+
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+
+HEADERS_KALSHI = {
+    "Authorization": f"Bearer {os.environ.get('KALSHI_API_KEY')}",
+    "Content-Type": "application/json",
+}
+EVENTS_URL = "https://api.elections.kalshi.com/trade-api/v2/events"
+MARKETS_URL = "https://api.elections.kalshi.com/trade-api/v2/markets"
+
+def safe_ts(val: str | None):
+    return val.strip() if val else None
+
+def fetch_events():
+    r = requests.get(EVENTS_URL, headers=HEADERS_KALSHI, timeout=15)
+    r.raise_for_status()
+    events = r.json().get("events", [])
+    return {e.get("ticker"): e for e in events if e.get("ticker")}
+
+def fetch_all_markets(limit: int = 1000):
+    markets, cursor = [], None
+    while True:
+        params = {"limit": limit}
+        if cursor:
+            params["cursor"] = cursor
+        r = requests.get(MARKETS_URL, headers=HEADERS_KALSHI, params=params, timeout=20)
+        r.raise_for_status()
+        data = r.json()
+        batch = data.get("markets", [])
+        cursor = data.get("cursor")
+        if not batch:
+            break
+        markets.extend(batch)
+        if not cursor:
+            break
+    return markets
+
 def main():
     events = fetch_events()
     raw_markets = fetch_all_markets()
 
-    # ✅ Sort markets by volume and keep only top 200
-    sorted_markets = sorted(
+    # Top 200 by volume
+    top_markets = sorted(
         [m for m in raw_markets if isinstance(m.get("volume"), (int, float))],
-        key=lambda x: x.get("volume", 0),
+        key=lambda x: x["volume"],
         reverse=True
     )[:200]
-
-    print(f"🏆 Markets to ingest: {len(sorted_markets)} (top 200 by volume)", flush=True)
 
     now_ts = datetime.utcnow().isoformat() + "Z"
     rows_m, rows_s, rows_o = [], [], []
 
-    for m in sorted_markets:
+    for m in top_markets:
         ticker = m.get("ticker")
         if not ticker:
             continue
@@ -28,7 +69,6 @@ def main():
         liquidity = m.get("open_interest")
         expiration = safe_ts(m.get("expiration"))
 
-        # --- markets table ----------------------------------------------------
         rows_m.append({
             "market_id": ticker,
             "market_name": m.get("title") or m.get("description") or "",
@@ -41,10 +81,9 @@ def main():
             "status": m.get("status") or "",
         })
 
-        # --- snapshots table --------------------------------------------------
         rows_s.append({
             "market_id": ticker,
-            "price": last_price,
+            "price": round(last_price, 4) if last_price is not None else None,
             "yes_bid": yes_bid,
             "no_bid": no_bid,
             "volume": volume,
@@ -54,7 +93,6 @@ def main():
             "source": "kalshi",
         })
 
-        # --- outcomes table ---------------------------------------------------
         rows_o.append({
             "market_id": ticker,
             "outcome_name": "Yes",
@@ -64,10 +102,9 @@ def main():
             "source": "kalshi",
         })
 
-    print("💾 Upserting markets…", flush=True)
     insert_to_supabase("markets", rows_m)
-    print("💾 Writing snapshots…", flush=True)
     insert_to_supabase("market_snapshots", rows_s, conflict_key=None)
-    print("💾 Writing outcomes…", flush=True)
     insert_to_supabase("market_outcomes", rows_o, conflict_key=None)
-    print(f"✅ Markets {len(rows_m)} | Snapshots {len(rows_s)} | Outcomes {len(rows_o)}", flush=True)
+
+if __name__ == "__main__":
+    main()
