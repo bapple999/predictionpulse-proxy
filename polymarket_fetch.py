@@ -1,4 +1,4 @@
-# polymarket_fetch.py – rewritten for parity with Kalshi ingestion
+# polymarket_fetch.py – optimized to ingest top 200 markets by 24h volume
 
 import requests, time
 from datetime import datetime
@@ -32,9 +32,18 @@ def fetch_clob(mid: str):
     return r.json()
 
 def main():
-    gamma = fetch_gamma_markets()
+    gamma_all = fetch_gamma_markets()
     now_iso = datetime.utcnow().isoformat()
     ts = now_iso + "Z"
+
+    # ✅ Keep only top 200 markets by 24h volume
+    gamma = sorted(
+        [g for g in gamma_all if isinstance(g.get("volume24Hr"), (int, float))],
+        key=lambda g: g["volume24Hr"],
+        reverse=True
+    )[:200]
+
+    print(f"🏆 Ingesting top {len(gamma)} Polymarket markets by 24h volume", flush=True)
 
     rows_m, rows_s, rows_o = [], [], []
 
@@ -48,7 +57,7 @@ def main():
         clob = fetch_clob(mid)
         outcomes = clob.get("outcomes", []) if clob else []
 
-        # Binary markets (e.g. YES/NO)
+        # Binary markets
         if len(outcomes) == 2 and all(o.get("price") is not None for o in outcomes):
             yes_price = outcomes[0]["price"]
             no_price  = outcomes[1]["price"]
