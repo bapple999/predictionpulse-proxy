@@ -1,11 +1,13 @@
-# ✅ polymarket_fetch.py – top 200 markets by dollar volume with YES outcome price
+# ✅ polymarket_fetch.py – top 200 markets by true dollar volume + YES price
 
 import requests, time
-from datetime import datetime
+from datetime import datetime, timedelta
+from dateutil import parser
 from common import insert_to_supabase
 
 GAMMA_ENDPOINT = "https://gamma-api.polymarket.com/markets"
 CLOB_ENDPOINT  = "https://clob.polymarket.com/markets/{}"
+TRADES_ENDPOINT = "https://clob.polymarket.com/markets/{}/trades"
 
 def fetch_gamma_markets(limit=1000, max_pages=30):
     print("📱 Fetching Polymarket markets (Gamma)…", flush=True)
@@ -35,6 +37,30 @@ def fetch_clob(mid: str):
     r.raise_for_status()
     return r.json()
 
+def fetch_trade_stats(mid: str):
+    try:
+        r = requests.get(TRADES_ENDPOINT.format(mid), timeout=10)
+        r.raise_for_status()
+        trades = r.json().get("trades", [])
+        cutoff = datetime.utcnow() - timedelta(hours=24)
+
+        total_contracts = 0
+        total_dollar_volume = 0.0
+
+        for t in trades:
+            ts = parser.parse(t["timestamp"])
+            if ts >= cutoff:
+                size = t["amount"]
+                price = t["price"] / 100  # convert from cents to dollars
+                total_contracts += size
+                total_dollar_volume += size * price
+
+        vwap = total_dollar_volume / total_contracts if total_contracts else None
+        return round(total_dollar_volume, 2), total_contracts, round(vwap, 4) if vwap else None
+    except Exception as e:
+        print(f"⚠️ Trade fetch failed for Polymarket {mid}: {e}")
+        return 0.0, 0, None
+
 def main():
     gamma_all = fetch_gamma_markets()
     now_iso = datetime.utcnow().isoformat()
@@ -61,9 +87,10 @@ def main():
         clob = fetch_clob(mid)
         outcomes = clob.get("outcomes", []) if clob else []
 
-        # Try to get price of YES outcome
         yes_price = next((o["price"] for o in outcomes if o.get("name", "").lower() == "yes" and o.get("price") is not None), None)
         price = yes_price / 100 if yes_price is not None else None
+
+        dollar_volume, contract_volume, vwap = fetch_trade_stats(mid)
 
         rows_m.append({
             "market_id":          mid,
@@ -78,15 +105,17 @@ def main():
         })
 
         rows_s.append({
-            "market_id": mid,
-            "price":     round(price, 4) if price is not None else None,
-            "yes_bid":   None,
-            "no_bid":    None,
-            "volume":    float(g.get("volume24Hr") or 0),
-            "liquidity": float(g.get("liquidity") or 0),
-            "expiration": end_d,
-            "timestamp": ts,
-            "source":    "polymarket",
+            "market_id":   mid,
+            "price":       round(price, 4) if price is not None else None,
+            "yes_bid":     None,
+            "no_bid":      None,
+            "volume":      contract_volume,
+            "dollar_volume": dollar_volume,
+            "vwap":        vwap,
+            "liquidity":   float(g.get("liquidity") or 0),
+            "expiration":  end_d,
+            "timestamp":   ts,
+            "source":      "polymarket",
         })
 
         for o in outcomes:
