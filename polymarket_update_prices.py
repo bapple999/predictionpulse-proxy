@@ -1,8 +1,7 @@
-# ✅ polymarket_update_prices.py – lightweight updater using YES price as market price
-
 import os
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
+from dateutil import parser
 from common import insert_to_supabase
 
 # Supabase config
@@ -14,10 +13,9 @@ SUPA_HEADERS = {
     "Content-Type":  "application/json",
 }
 
-# Polymarket CLOB endpoint
 CLOB_ENDPOINT = "https://clob.polymarket.com/markets/{}"
+TRADES_ENDPOINT = "https://clob.polymarket.com/markets/{}/trades"
 
-# Fetch single market's CLOB data
 def fetch_clob(mid: str):
     r = requests.get(CLOB_ENDPOINT.format(mid), timeout=10)
     if r.status_code == 404:
@@ -25,7 +23,30 @@ def fetch_clob(mid: str):
     r.raise_for_status()
     return r.json()
 
-# Get all open Polymarket market IDs (expiration in the future)
+def fetch_trade_stats(mid: str):
+    try:
+        r = requests.get(TRADES_ENDPOINT.format(mid), timeout=10)
+        r.raise_for_status()
+        trades = r.json().get("trades", [])
+        cutoff = datetime.utcnow() - timedelta(hours=24)
+
+        total_contracts = 0
+        total_dollar_volume = 0.0
+
+        for t in trades:
+            ts = parser.parse(t["timestamp"])
+            if ts >= cutoff:
+                size = t["amount"]
+                price = t["price"] / 100
+                total_contracts += size
+                total_dollar_volume += size * price
+
+        vwap = total_dollar_volume / total_contracts if total_contracts else None
+        return round(total_dollar_volume, 2), total_contracts, round(vwap, 4) if vwap else None
+    except Exception as e:
+        print(f"⚠️ Trade fetch failed for Polymarket {mid}: {e}")
+        return 0.0, 0, None
+
 def load_market_ids(now_iso: str):
     url = f"{SUPABASE_URL}/rest/v1/markets?select=market_id,expiration&limit=500"
     resp = requests.get(url, headers=SUPA_HEADERS, timeout=15)
@@ -38,8 +59,8 @@ def load_market_ids(now_iso: str):
 def main():
     now_iso = datetime.utcnow().isoformat()
     ts = now_iso + "Z"
-
     market_ids = load_market_ids(now_iso)
+
     snapshots, outcomes = [], []
 
     for mid in market_ids:
@@ -48,17 +69,19 @@ def main():
             continue
 
         clob_outcomes = clob.get("outcomes", [])
-
-        # Extract YES price
         yes_price = next((o.get("price") for o in clob_outcomes if o.get("name", "").lower() == "yes"), None)
         price = yes_price / 100 if yes_price is not None else None
+
+        dollar_volume, contract_volume, vwap = fetch_trade_stats(mid)
 
         snapshots.append({
             "market_id":  mid,
             "price":      round(price, 4) if price is not None else None,
             "yes_bid":    None,
             "no_bid":     None,
-            "volume":     None,
+            "volume":     contract_volume,
+            "dollar_volume": dollar_volume,
+            "vwap":       vwap,
             "liquidity":  None,
             "timestamp":  ts,
             "source":     "polymarket_clob",
