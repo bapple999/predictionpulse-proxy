@@ -1,4 +1,4 @@
-# ✅ polymarket_fetch.py – optimized to use YES outcome price, top 200 by contract volume
+# ✅ polymarket_fetch.py – top 200 markets by dollar volume with YES outcome price
 
 import requests, time
 from datetime import datetime
@@ -8,17 +8,24 @@ GAMMA_ENDPOINT = "https://gamma-api.polymarket.com/markets"
 CLOB_ENDPOINT  = "https://clob.polymarket.com/markets/{}"
 
 def fetch_gamma_markets(limit=1000, max_pages=30):
-    markets, offset = [], 0
-    while len(markets) < limit * max_pages:
+    print("📱 Fetching Polymarket markets (Gamma)…", flush=True)
+    markets, offset, pages = [], 0, 0
+    while pages < max_pages:
         r = requests.get(GAMMA_ENDPOINT, params={"limit": limit, "offset": offset}, timeout=15)
         if r.status_code == 429:
-            time.sleep(10); continue
+            print("⏳ Rate‑limited; sleeping 10 s", flush=True)
+            time.sleep(10)
+            continue
         r.raise_for_status()
-        batch = r.json()
+        data = r.json()
+        batch = data.get("markets", [])
         if not batch:
             break
         markets.extend(batch)
         offset += limit
+        pages += 1
+        print(f"⏱  {len(batch):4} markets (offset {offset})", flush=True)
+    print(f"🔍 Total markets fetched: {len(markets)}", flush=True)
     return markets
 
 def fetch_clob(mid: str):
@@ -33,11 +40,14 @@ def main():
     now_iso = datetime.utcnow().isoformat()
     ts = now_iso + "Z"
 
+    # filter and rank top 200 by volume
     gamma = sorted(
         [g for g in gamma_all if isinstance(g.get("volume24Hr"), (int, float))],
         key=lambda g: g["volume24Hr"],
         reverse=True
     )[:200]
+
+    print(f"🏆 Top 200 markets selected by volume", flush=True)
 
     rows_m, rows_s, rows_o = [], [], []
 
@@ -51,11 +61,9 @@ def main():
         clob = fetch_clob(mid)
         outcomes = clob.get("outcomes", []) if clob else []
 
-        if len(outcomes) == 2 and all(o.get("price") is not None for o in outcomes):
-            yes_price = outcomes[0]["price"]
-            price = yes_price / 100
-        else:
-            price = None
+        # Try to get price of YES outcome
+        yes_price = next((o["price"] for o in outcomes if o.get("name", "").lower() == "yes" and o.get("price") is not None), None)
+        price = yes_price / 100 if yes_price is not None else None
 
         rows_m.append({
             "market_id":          mid,
@@ -94,9 +102,11 @@ def main():
                     "source":       "polymarket",
                 })
 
+    print(f"📦 Inserting {len(rows_m)} markets, {len(rows_s)} snapshots, {len(rows_o)} outcomes", flush=True)
     insert_to_supabase("markets", rows_m)
     insert_to_supabase("market_snapshots", rows_s, conflict_key=None)
     insert_to_supabase("market_outcomes", rows_o, conflict_key=None)
+    print("✅ Done.", flush=True)
 
 if __name__ == "__main__":
     main()
