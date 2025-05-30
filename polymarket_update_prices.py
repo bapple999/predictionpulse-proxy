@@ -5,6 +5,7 @@ import requests
 from datetime import datetime
 from common import insert_to_supabase
 
+# Supabase config
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SERVICE_KEY  = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 SUPA_HEADERS = {
@@ -13,8 +14,10 @@ SUPA_HEADERS = {
     "Content-Type":  "application/json",
 }
 
+# Polymarket CLOB endpoint
 CLOB_ENDPOINT = "https://clob.polymarket.com/markets/{}"
 
+# Fetch single market's CLOB data
 def fetch_clob(mid: str):
     r = requests.get(CLOB_ENDPOINT.format(mid), timeout=10)
     if r.status_code == 404:
@@ -22,16 +25,19 @@ def fetch_clob(mid: str):
     r.raise_for_status()
     return r.json()
 
+# Get all open Polymarket market IDs (expiration in the future)
 def load_market_ids(now_iso: str):
-    url = f"{SUPABASE_URL}/rest/v1/markets?select=market_id,expiration,volume&order=volume.desc&limit=200"
+    url = f"{SUPABASE_URL}/rest/v1/markets?select=market_id,expiration&limit=500"
     resp = requests.get(url, headers=SUPA_HEADERS, timeout=15)
     resp.raise_for_status()
     rows = resp.json()
-    return [r["market_id"] for r in rows if r.get("expiration") and r["expiration"] > now_iso]
+    market_ids = [r["market_id"] for r in rows if r.get("expiration") and r["expiration"] > now_iso]
+    print(f"✅ Loaded {len(market_ids)} open Polymarket market IDs")
+    return market_ids
 
 def main():
-    ts = datetime.utcnow().isoformat() + "Z"
     now_iso = datetime.utcnow().isoformat()
+    ts = now_iso + "Z"
 
     market_ids = load_market_ids(now_iso)
     snapshots, outcomes = [], []
@@ -43,14 +49,12 @@ def main():
 
         clob_outcomes = clob.get("outcomes", [])
 
-        if len(clob_outcomes) == 2 and all(o.get("price") is not None for o in clob_outcomes):
-            yes_price = clob_outcomes[0]["price"]
-            price = yes_price / 100
-        else:
-            price = None
+        # Extract YES price
+        yes_price = next((o.get("price") for o in clob_outcomes if o.get("name", "").lower() == "yes"), None)
+        price = yes_price / 100 if yes_price is not None else None
 
         snapshots.append({
-            "market_id": mid,
+            "market_id":  mid,
             "price":      round(price, 4) if price is not None else None,
             "yes_bid":    None,
             "no_bid":     None,
@@ -61,17 +65,22 @@ def main():
         })
 
         for outcome in clob_outcomes:
-            outcomes.append({
-                "market_id":    mid,
-                "outcome_name": outcome.get("name"),
-                "price":        outcome.get("price") / 100 if outcome.get("price") is not None else None,
-                "volume":       None,
-                "timestamp":    ts,
-                "source":       "polymarket_clob",
-            })
+            name = outcome.get("name")
+            outcome_price = outcome.get("price")
+            if name and outcome_price is not None:
+                outcomes.append({
+                    "market_id":    mid,
+                    "outcome_name": name,
+                    "price":        outcome_price / 100,
+                    "volume":       None,
+                    "timestamp":    ts,
+                    "source":       "polymarket_clob",
+                })
 
+    print(f"📦 Writing {len(snapshots)} snapshots and {len(outcomes)} outcomes to Supabase…")
     insert_to_supabase("market_snapshots", snapshots, conflict_key=None)
     insert_to_supabase("market_outcomes", outcomes, conflict_key=None)
+    print("✅ Done.")
 
 if __name__ == "__main__":
     main()
