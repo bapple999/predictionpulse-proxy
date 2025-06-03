@@ -10,7 +10,7 @@ CLOB_ENDPOINT  = "https://clob.polymarket.com/markets/{}"
 TRADES_ENDPOINT = "https://clob.polymarket.com/markets/{}/trades"
 
 def fetch_gamma_markets(limit=1000, max_pages=30):
-    print("📱 Fetching Polymarket markets (Gamma)…", flush=True)
+    print("\U0001F4F1 Fetching Polymarket markets (Gamma)…", flush=True)
     markets, offset, pages = [], 0, 0
     while pages < max_pages:
         r = requests.get(GAMMA_ENDPOINT, params={"limit": limit, "offset": offset}, timeout=15)
@@ -20,14 +20,25 @@ def fetch_gamma_markets(limit=1000, max_pages=30):
             continue
         r.raise_for_status()
         data = r.json()
-        batch = data.get("markets", [])
+
+        # Patch: handle if response is a list
+        if isinstance(data, dict):
+            batch = data.get("markets", [])
+        elif isinstance(data, list):
+            batch = data
+        else:
+            print(f"⚠️ Unexpected response type: {type(data)} — skipping page")
+            batch = []
+
         if not batch:
             break
+
         markets.extend(batch)
         offset += limit
         pages += 1
         print(f"⏱  {len(batch):4} markets (offset {offset})", flush=True)
-    print(f"🔍 Total markets fetched: {len(markets)}", flush=True)
+
+    print(f"\U0001F50D Total markets fetched: {len(markets)}", flush=True)
     return markets
 
 def fetch_clob(mid: str):
@@ -66,14 +77,13 @@ def main():
     now_iso = datetime.utcnow().isoformat()
     ts = now_iso + "Z"
 
-    # filter and rank top 200 by volume
     gamma = sorted(
         [g for g in gamma_all if isinstance(g.get("volume24Hr"), (int, float))],
         key=lambda g: g["volume24Hr"],
         reverse=True
     )[:200]
 
-    print(f"🏆 Top 200 markets selected by volume", flush=True)
+    print(f"\U0001F3C6 Top 200 markets selected by volume", flush=True)
 
     rows_m, rows_s, rows_o = [], [], []
 
@@ -105,17 +115,17 @@ def main():
         })
 
         rows_s.append({
-            "market_id":   mid,
-            "price":       round(price, 4) if price is not None else None,
-            "yes_bid":     None,
-            "no_bid":      None,
-            "volume":      contract_volume,
+            "market_id":    mid,
+            "price":        round(price, 4) if price is not None else None,
+            "yes_bid":      None,
+            "no_bid":       None,
+            "volume":       contract_volume,
             "dollar_volume": dollar_volume,
-            "vwap":        vwap,
-            "liquidity":   float(g.get("liquidity") or 0),
-            "expiration":  end_d,
-            "timestamp":   ts,
-            "source":      "polymarket",
+            "vwap":         vwap,
+            "liquidity":    float(g.get("liquidity") or 0),
+            "expiration":   end_d,
+            "timestamp":    ts,
+            "source":       "polymarket",
         })
 
         for o in outcomes:
@@ -131,7 +141,7 @@ def main():
                     "source":       "polymarket",
                 })
 
-    print(f"📦 Inserting {len(rows_m)} markets, {len(rows_s)} snapshots, {len(rows_o)} outcomes", flush=True)
+    print(f"\U0001F4E6 Inserting {len(rows_m)} markets, {len(rows_s)} snapshots, {len(rows_o)} outcomes", flush=True)
     insert_to_supabase("markets", rows_m)
     insert_to_supabase("market_snapshots", rows_s, conflict_key=None)
     insert_to_supabase("market_outcomes", rows_o, conflict_key=None)
