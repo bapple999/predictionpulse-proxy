@@ -1,5 +1,6 @@
-const SUPABASE_URL = "https://eypantouzmwgauobeywr.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV5cGFudG91em13Z2F1b2JleXdyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDc4Nzk5MzYsImV4cCI6MjA2MzQ1NTkzNn0.SyDUsU6IqkUqH8TLkNX8nNCYzcjZZ4CUvVqUzt1w8TI"; // 🔐 You can keep it in .env or obfuscate if exposed
+// URL and anon key are provided by public/config.js (git‑ignored)
+const SUPABASE_URL = window.SUPABASE_URL;
+const SUPABASE_KEY = window.SUPABASE_KEY;
 
 let chart, sortKey = "volume", sortDir = "desc";
 
