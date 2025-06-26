@@ -61,6 +61,18 @@
 
 Add them to **`.env`** for local runs and **GitHub Secrets** for CI.
 
+### Front-end config
+
+The demo page in `public/` reads credentials from `public/config.js`. Create it
+from the example and fill in your values:
+
+```bash
+cp public/config.example.js public/config.js
+# edit with your SUPABASE_URL and anon key
+```
+
+`config.js` is ignored by git so your key won't be committed.
+
 ---
 
 ## 🔃 Scheduled jobs
