@@ -23,6 +23,7 @@
 # Run once to verify
  python kalshi_fetch.py               # daily metadata load
  python kalshi_update_prices.py       # single price snapshot
+ python market_news_summary.py        # summarize movers w/ news
 ```
 
 *Requires Python 3.11+*
@@ -38,6 +39,7 @@
 ├── kalshi_update_prices.py       # 5‑minute snapshots
 ├── polymarket_fetch.py           # daily full‑market load
 ├── polymarket_update_prices.py   # 5‑minute snapshots
+├── market_news_summary.py        # summarize big movers
 ├── requirements.txt
 ├── README.md
 └── .github/
