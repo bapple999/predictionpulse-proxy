@@ -75,6 +75,9 @@ cp public/config.example.js public/config.js
 
 `config.js` is ignored by git so your key won't be committed.
 
+The table on the demo page now includes an **AI Summary** column when the
+`latest_snapshots` view exposes a `summary` field.
+
 ---
 
 ## 🔃 Scheduled jobs
