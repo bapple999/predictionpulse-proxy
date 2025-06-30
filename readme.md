@@ -2,10 +2,10 @@
 
 *Fast, idempotent loaders for Kalshi & Polymarket → Supabase*
 
-[![Kalshi Full Fetch](https://github.com/yourname/predictionpulse-ingestion/actions/workflows/kalshi_fetch.yml/badge.svg)](https://github.com/yourname/predictionpulse-ingestion/actions/workflows/kalshi_fetch.yml)
-[![Kalshi Price Updates](https://github.com/yourname/predictionpulse-ingestion/actions/workflows/kalshi_update.yml/badge.svg)](https://github.com/yourname/predictionpulse-ingestion/actions/workflows/kalshi_update.yml)
-[![Polymarket Full Fetch](https://github.com/yourname/predictionpulse-ingestion/actions/workflows/polymarket-fetch.yml/badge.svg)](https://github.com/yourname/predictionpulse-ingestion/actions/workflows/polymarket-fetch.yml)
-[![Polymarket Price Updates](https://github.com/yourname/predictionpulse-ingestion/actions/workflows/polymarket_price_updates.yml/badge.svg)](https://github.com/yourname/predictionpulse-ingestion/actions/workflows/polymarket_price_updates.yml)
+[![Kalshi Full Fetch](https://github.com/yourname/predictionpulse-proxy/actions/workflows/kalshi_fetch.yml/badge.svg)](https://github.com/yourname/predictionpulse-proxy/actions/workflows/kalshi_fetch.yml)
+[![Kalshi Price Updates](https://github.com/yourname/predictionpulse-proxy/actions/workflows/kalshi_update.yml/badge.svg)](https://github.com/yourname/predictionpulse-proxy/actions/workflows/kalshi_update.yml)
+[![Polymarket Full Fetch](https://github.com/yourname/predictionpulse-proxy/actions/workflows/polymarket-fetch.yml/badge.svg)](https://github.com/yourname/predictionpulse-proxy/actions/workflows/polymarket-fetch.yml)
+[![Polymarket Price Updates](https://github.com/yourname/predictionpulse-proxy/actions/workflows/polymarket_price_updates.yml/badge.svg)](https://github.com/yourname/predictionpulse-proxy/actions/workflows/polymarket_price_updates.yml)
 
 ---
 
@@ -13,8 +13,8 @@
 
 ```bash
 # Clone & install
- git clone https://github.com/yourname/predictionpulse-ingestion.git
- cd predictionpulse-ingestion
+ git clone https://github.com/yourname/predictionpulse-proxy.git
+ cd predictionpulse-proxy
  pip install -r requirements.txt
 
 # Configure secrets
@@ -71,6 +71,7 @@ from the example and fill in your values:
 ```bash
 cp public/config.example.js public/config.js
 # edit with your SUPABASE_URL and anon key
+# netlify.toml expects https://YOUR_PROJECT.supabase.co
 ```
 
 `config.js` is ignored by git so your key won't be committed.
