@@ -5,6 +5,13 @@ const SUPABASE_KEY = window.SUPABASE_KEY;
 let chart, sortKey = "volume", sortDir = "desc";
 
 function api(path) {
+  if (!SUPABASE_URL || !SUPABASE_KEY || SUPABASE_URL.includes("YOUR_PROJECT")) {
+    return Promise.reject(
+      new Error(
+        "Supabase credentials missing. Copy public/config.example.js to public/config.js and set your project URL and anon key."
+      )
+    );
+  }
   return fetch(`${SUPABASE_URL}${path}`, {
     headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
     mode: "cors"
