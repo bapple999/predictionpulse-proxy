@@ -61,7 +61,7 @@
 | `KALSHI_API_KEY`            | Kalshi personal API token             |
 | `POLYMARKET_API_KEY`        | (optional) higher quota for Gamma API |
 
-Add them to **`.env`** for local runs and **GitHub Secrets** for CI.
+See **`.env.example`** for a template and add them to **`.env`** for local runs. Store them in **GitHub Secrets** for CI.
 
 ### Front-end config
 
