@@ -41,13 +41,13 @@ def fetch_trade_stats(tkr: str):
         r.raise_for_status()
         trades = r.json().get("trades", [])
         cutoff = datetime.utcnow() - timedelta(hours=24)
-        dollar_vol, vol_ct = 0.0, 0
+        dollar_volume, vol_ct = 0.0, 0
         for t in trades:
             if parser.parse(t["timestamp"]) >= cutoff:
                 vol_ct += t["size"]
-                dollar_vol   += t["size"] * t["price"]
-        vwap = round(dollar_vol/vol_ct, 4) if vol_ct else None
-        return round(dollar_vol,2), vol_ct, vwap
+                dollar_volume   += t["size"] * t["price"]
+        vwap = round(dollar_volume/vol_ct, 4) if vol_ct else None
+        return round(dollar_volume,2), vol_ct, vwap
     except Exception as e:
         print(f"⚠️ Trade fetch failed for {tkr}: {e}")
         return 0.0, 0, None
@@ -82,10 +82,10 @@ def main():
 
         # --- dollar vol / VWAP ---
         confirmed_ct = m.get("volume_24h", 0)
-        dollar_vol   = m.get("dollar_volume_24h", 0.0)
+        dollar_volume   = m.get("dollar_volume_24h", 0.0)
         vwap         = m.get("vwap_24h")
         if confirmed_ct == 0 and last_px is not None:
-            dollar_vol = round(last_px * vol_ct, 2)   # fallback approximation
+            dollar_volume = round(last_px * vol_ct, 2)   # fallback approximation
 
         # ---------- markets ----------
         rows_m.append({
@@ -106,7 +106,7 @@ def main():
             "price":         round(last_px,4) if last_px is not None else None,
             "yes_bid":       yes_bid,           "no_bid": no_bid,
             "volume":        confirmed_ct or vol_ct,
-            "dollar_volume": dollar_vol,
+            "dollar_volume": dollar_volume,
             "vwap":          vwap,
             "liquidity":     liquidity,
             "expiration":    expiration,
