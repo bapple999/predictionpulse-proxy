@@ -1,6 +1,5 @@
-// URL and anon key are provided by public/config.js (git‑ignored)
-const SUPABASE_URL = window.SUPABASE_URL;
-const SUPABASE_KEY = window.SUPABASE_KEY;
+// Import Supabase credentials from config.js (not committed to git)
+import { SUPABASE_URL, SUPABASE_KEY } from "./config.js";
 
 let chart, sortKey = "volume", sortDir = "desc";
 
