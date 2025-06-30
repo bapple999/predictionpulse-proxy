@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 from dateutil import parser
 from common import insert_to_supabase
 
+# refresh prices for the most active Kalshi markets (24h volume)
+
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SERVICE_KEY  = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 SUPA_HEADERS = {
@@ -61,9 +63,19 @@ def main():
     ts = datetime.utcnow().isoformat() + "Z"
     markets = fetch_all_markets()
 
+    # fetch 24h trade stats for ranking
+    for m in markets:
+        if not m.get("ticker"):
+            continue
+        dv, ct, vw = fetch_trade_stats(m["ticker"])
+        m["volume_24h"] = ct
+        m["dollar_volume_24h"] = dv
+        m["vwap_24h"] = vw
+
+    # rank by past 24h volume
     top_markets = sorted(
-        [m for m in markets if isinstance(m.get("volume"), (int, float))],
-        key=lambda m: m["volume"],
+        [m for m in markets if m.get("ticker")],
+        key=lambda m: m.get("volume_24h", 0),
         reverse=True
     )[:200]
 
@@ -75,7 +87,9 @@ def main():
         yes_bid = m.get("yes_bid")
         no_bid = m.get("no_bid")
 
-        dollar_volume, contract_volume, vwap = fetch_trade_stats(mid)
+        contract_volume = m.get("volume_24h", 0)
+        dollar_volume   = m.get("dollar_volume_24h", 0.0)
+        vwap            = m.get("vwap_24h")
 
         snapshots.append({
             "market_id":  mid,
