@@ -25,7 +25,7 @@ async function loadMarkets() {
   try {
     let rows = await api(
       `/rest/v1/latest_snapshots` +
-      `?select=market_id,source,price,volume,timestamp,market_name,event_name,expiration` +
+      `?select=market_id,source,price,volume,timestamp,market_name,event_name,expiration,summary` +
       `&limit=1000`
     );
 
@@ -73,9 +73,15 @@ function renderTable(rows) {
   tbody.innerHTML = "";
 
   rows.sort((a, b) => {
-    const va = a[sortKey] ?? -Infinity;
-    const vb = b[sortKey] ?? -Infinity;
-    return sortDir === "desc" ? vb - va : va - vb;
+    const va = a[sortKey];
+    const vb = b[sortKey];
+    if (typeof va === "string" || typeof vb === "string") {
+      const cmp = String(va).localeCompare(String(vb));
+      return sortDir === "desc" ? -cmp : cmp;
+    }
+    const numA = va ?? -Infinity;
+    const numB = vb ?? -Infinity;
+    return sortDir === "desc" ? numB - numA : numA - numB;
   });
 
   rows.forEach(r => {
@@ -91,6 +97,7 @@ function renderTable(rows) {
         <td>${r.volume == null ? "—" : `$${Number(r.volume).toLocaleString()}`}</td>
         <td>${r.expiration ? new Date(r.expiration).toLocaleDateString() : "—"}</td>
         <td>${arrow} ${changeDisp}</td>
+        <td>${r.summary ? r.summary : "—"}</td>
       </tr>`;
 
     tbody.insertAdjacentHTML("beforeend", rowHtml);
