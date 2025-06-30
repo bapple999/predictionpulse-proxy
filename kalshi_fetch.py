@@ -1,4 +1,4 @@
-# ✅ kalshi_fetch.py  – top 200 Kalshi markets with dollar-volume & VWAP
+# ✅ kalshi_fetch.py – top 200 Kalshi markets ranked by 24h volume
 
 import os, requests
 from datetime import datetime, timedelta
@@ -57,9 +57,16 @@ def main():
     events = fetch_events()
     raw    = fetch_all_markets()
 
-    # keep only actively trading markets, rank by 24 h volume
-    active = [m for m in raw if (m.get("status","TRADING")).upper()=="TRADING"]
-    active = sorted(active, key=lambda m: float(m.get("volume") or 0), reverse=True)[:200]
+    # keep only actively trading markets, fetch 24h stats for ranking
+    active = [m for m in raw if (m.get("status", "TRADING")).upper() == "TRADING"]
+    for m in active:
+        dv, ct, vw = fetch_trade_stats(m["ticker"])
+        m["volume_24h"] = ct
+        m["dollar_volume_24h"] = dv
+        m["vwap_24h"] = vw
+
+    # rank by past 24h volume
+    active = sorted(active, key=lambda m: m.get("volume_24h", 0), reverse=True)[:200]
 
     ts = datetime.utcnow().isoformat()+"Z"
     rows_m, rows_s, rows_o = [], [], []
@@ -74,8 +81,10 @@ def main():
         expiration = m.get("expiration")  # already ISO-8601 or None
 
         # --- dollar vol / VWAP ---
-        dollar_vol, confirmed_ct, vwap = fetch_trade_stats(tkr)
-        if confirmed_ct==0 and last_px is not None:
+        confirmed_ct = m.get("volume_24h", 0)
+        dollar_vol   = m.get("dollar_volume_24h", 0.0)
+        vwap         = m.get("vwap_24h")
+        if confirmed_ct == 0 and last_px is not None:
             dollar_vol = round(last_px * vol_ct, 2)   # fallback approximation
 
         # ---------- markets ----------
