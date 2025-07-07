@@ -5,3 +5,6 @@ requests
 python-multipart
 pytz
 python-dateutil
+
+feedparser
+openai
