@@ -1,4 +1,16 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.log
+
 # Local environment files
 .env
 # Browser config with secrets
 public/config.js
+
+# Node modules
+node_modules/
+webapp/node_modules/
+
+# Build output
+dist/
