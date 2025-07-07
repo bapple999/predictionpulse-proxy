@@ -102,6 +102,11 @@ Full‑fetch jobs rebuild metadata once a day; lightweight update jobs keep quot
 
 The `tags` column is `jsonb`; just pass a Python list (`["econ","CPI"]`).
 
+## 🖥 Frontend web app
+
+The `webapp/` directory contains a small React app built with [Vite](https://vitejs.dev/).
+Run `npm install` inside that folder and `npm run dev` to start a local preview.
+
 ---
 
 ## 🛣 Roadmap
