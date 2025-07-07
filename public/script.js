@@ -2,6 +2,7 @@
 import { SUPABASE_URL, SUPABASE_KEY } from "./config.js";
 
 let chart, sortKey = "volume", sortDir = "desc";
+let sourceFilter = "all", categoryFilter = "all";
 
 function api(path) {
   if (!SUPABASE_URL || !SUPABASE_KEY || SUPABASE_URL.includes("YOUR_PROJECT")) {
@@ -24,7 +25,7 @@ async function loadMarkets() {
   try {
     let rows = await api(
       `/rest/v1/latest_snapshots` +
-      `?select=market_id,source,price,volume,timestamp,market_name,event_name,expiration,summary` +
+      `?select=market_id,source,price,volume,timestamp,market_name,event_name,expiration,summary,tags` +
       `&limit=1000`
     );
 
@@ -42,25 +43,65 @@ async function loadMarkets() {
       `&order=timestamp.desc`
     );
 
+    const since7d = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+
+    const prevRows7d = await api(
+      `/rest/v1/market_snapshots?select=market_id,price` +
+      `&market_id=in.(${idList})&timestamp=gt.${since7d}` +
+      `&order=timestamp.desc`
+    );
+
     const prevPrice = {};
     prevRows.forEach(p => (prevPrice[p.market_id] ??= p.price));
+
+    const prevPrice7d = {};
+    prevRows7d.forEach(p => (prevPrice7d[p.market_id] ??= p.price));
 
     const deduped = Object.values(rows.reduce((acc, r) => {
       acc[r.market_id] = r;
       return acc;
     }, {}));
+    deduped.sort((a, b) => (b.volume || 0) - (a.volume || 0));
+    const top = deduped.slice(0, 25);
 
-    deduped.forEach(r => {
+    top.forEach(r => {
       r.cleanPrice = r.price != null && r.price >= 0 && r.price <= 1 ? r.price : null;
       r.price24h = prevPrice[r.market_id];
+      r.price7d = prevPrice7d[r.market_id];
       r.changePct =
         r.cleanPrice != null && r.price24h != null
           ? ((r.cleanPrice - r.price24h) * 100).toFixed(2)
           : null;
+      r.change7dPct =
+        r.cleanPrice != null && r.price7d != null
+          ? ((r.cleanPrice - r.price7d) * 100).toFixed(2)
+          : null;
       r.cleanSource = r.source.startsWith("polymarket") ? "polymarket" : r.source;
     });
 
-    renderTable(deduped);
+    const trendingList = document.getElementById("trendingList");
+    trendingList.innerHTML = "";
+    const trending = [...top].sort((a, b) => {
+      const av = Math.max(Math.abs(Number(a.changePct || 0)), Math.abs(Number(a.change7dPct || 0)));
+      const bv = Math.max(Math.abs(Number(b.changePct || 0)), Math.abs(Number(b.change7dPct || 0)));
+      return bv - av;
+    }).slice(0, 5);
+
+    trending.forEach(r => {
+      const use7 = Math.abs(Number(r.change7dPct || 0)) > Math.abs(Number(r.changePct || 0));
+      const pct = use7 ? r.change7dPct : r.changePct;
+      const label = use7 ? "7d" : "24h";
+      const arrow = pct == null ? "" : String(pct).startsWith("-") ? "⬇️" : "⬆️";
+      const url = r.cleanSource === "kalshi"
+        ? `https://kalshi.com/markets/${r.market_id}`
+        : `https://polymarket.com/market/${r.market_id}`;
+      trendingList.insertAdjacentHTML(
+        "beforeend",
+        `<li><a href="${url}" target="_blank">${r.market_name || r.market_id} — ${arrow} ${pct}% (${label})</a></li>`
+      );
+    });
+
+    renderTable(top);
   } catch (err) {
     console.error(err);
     document.getElementById("emptyMessage").style.display = "block";
@@ -87,21 +128,36 @@ function renderTable(rows) {
     const priceDisp = r.cleanPrice == null ? "—" : `${(r.cleanPrice * 100).toFixed(1)}%`;
     const changeDisp = r.changePct == null ? "—" : `${r.changePct}%`;
     const arrow = r.changePct == null ? "" : r.changePct.startsWith("-") ? "⬇️" : "⬆️";
+    const change7Disp = r.change7dPct == null ? "—" : `${r.change7dPct}%`;
+    const arrow7 = r.change7dPct == null ? "" : r.change7dPct.startsWith("-") ? "⬇️" : "⬆️";
+    const url = r.cleanSource === "kalshi"
+      ? `https://kalshi.com/markets/${r.market_id}`
+      : `https://polymarket.com/market/${r.market_id}`;
 
     const rowHtml = `
-      <tr class="event-section" data-source="${r.cleanSource}" data-market-id="${r.market_id}">
-        <td>${r.market_name || r.market_id}</td>
+      <tr class="event-section" data-source="${r.cleanSource}" data-tags="${(r.tags || []).join(',').toLowerCase()}" data-market-id="${r.market_id}">
+        <td><a href="${url}" target="_blank">${r.market_name || r.market_id}</a></td>
         <td>${r.cleanSource}</td>
         <td>${priceDisp}</td>
         <td>${r.volume == null ? "—" : `$${Number(r.volume).toLocaleString()}`}</td>
         <td>${r.expiration ? new Date(r.expiration).toLocaleDateString() : "—"}</td>
         <td>${arrow} ${changeDisp}</td>
+        <td>${arrow7} ${change7Disp}</td>
         <td>${r.summary ? r.summary : "—"}</td>
       </tr>`;
 
     tbody.insertAdjacentHTML("beforeend", rowHtml);
-    tbody.lastElementChild.onclick = () =>
-      drawChart(r.market_id, r.market_name || r.market_id);
+  });
+
+  applyFilters();
+}
+
+function applyFilters() {
+  document.querySelectorAll("tbody tr.event-section").forEach(row => {
+    const matchSource = sourceFilter === "all" || row.dataset.source === sourceFilter;
+    const tags = (row.dataset.tags || "").split(",");
+    const matchCat = categoryFilter === "all" || tags.includes(categoryFilter);
+    row.style.display = matchSource && matchCat ? "" : "none";
   });
 }
 
@@ -132,12 +188,17 @@ document.addEventListener("DOMContentLoaded", () => {
   loadMarkets();
 
   document.querySelectorAll(".filters button").forEach(btn => {
-    btn.onclick = () => {
-      const f = btn.dataset.filter;
-      document.querySelectorAll("tbody tr.event-section").forEach(row => {
-        row.style.display = f === "all" || row.dataset.source === f ? "" : "none";
-      });
-    };
+    if (btn.dataset.filter) {
+      btn.onclick = () => {
+        sourceFilter = btn.dataset.filter;
+        applyFilters();
+      };
+    } else if (btn.dataset.cat) {
+      btn.onclick = () => {
+        categoryFilter = btn.dataset.cat;
+        applyFilters();
+      };
+    }
   });
 
   document.querySelectorAll("th[data-sort]").forEach(th => {
