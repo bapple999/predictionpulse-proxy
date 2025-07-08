@@ -1,4 +1,4 @@
-# ✅ kalshi_fetch.py  – top 200 Kalshi markets with dollar-volume & VWAP
+# ✅ kalshi_fetch.py – top 200 Kalshi markets ranked by 24h volume
 
 import os, requests
 from datetime import datetime, timedelta
@@ -41,13 +41,21 @@ def fetch_trade_stats(tkr: str):
         r.raise_for_status()
         trades = r.json().get("trades", [])
         cutoff = datetime.utcnow() - timedelta(hours=24)
-        vol$, vol_ct = 0.0, 0
+        vol_d, vol_ct = 0.0, 0
         for t in trades:
             if parser.parse(t["timestamp"]) >= cutoff:
                 vol_ct += t["size"]
-                vol$   += t["size"] * t["price"]
-        vwap = round(vol$/vol_ct, 4) if vol_ct else None
-        return round(vol$,2), vol_ct, vwap
+                vol_d   += t["size"] * t["price"]
+        vwap = round(vol_d/vol_ct, 4) if vol_ct else None
+        return round(vol_d,2), vol_ct, vwap
+
+        dollar_volume, vol_ct = 0.0, 0
+        for t in trades:
+            if parser.parse(t["timestamp"]) >= cutoff:
+                vol_ct += t["size"]
+                dollar_volume   += t["size"] * t["price"]
+        vwap = round(dollar_volume/vol_ct, 4) if vol_ct else None
+        return round(dollar_volume,2), vol_ct, vwap
     except Exception as e:
         print(f"⚠️ Trade fetch failed for {tkr}: {e}")
         return 0.0, 0, None
@@ -57,9 +65,16 @@ def main():
     events = fetch_events()
     raw    = fetch_all_markets()
 
-    # keep only actively trading markets, rank by 24 h volume
-    active = [m for m in raw if (m.get("status","TRADING")).upper()=="TRADING"]
-    active = sorted(active, key=lambda m: float(m.get("volume") or 0), reverse=True)[:200]
+    # keep only actively trading markets, fetch 24h stats for ranking
+    active = [m for m in raw if (m.get("status", "TRADING")).upper() == "TRADING"]
+    for m in active:
+        dv, ct, vw = fetch_trade_stats(m["ticker"])
+        m["volume_24h"] = ct
+        m["dollar_volume_24h"] = dv
+        m["vwap_24h"] = vw
+
+    # rank by past 24h volume
+    active = sorted(active, key=lambda m: m.get("volume_24h", 0), reverse=True)[:200]
 
     ts = datetime.utcnow().isoformat()+"Z"
     rows_m, rows_s, rows_o = [], [], []
@@ -74,9 +89,16 @@ def main():
         expiration = m.get("expiration")  # already ISO-8601 or None
 
         # --- dollar vol / VWAP ---
-        vol$, confirmed_ct, vwap = fetch_trade_stats(tkr)
+        vol_d, confirmed_ct, vwap = fetch_trade_stats(tkr)
         if confirmed_ct==0 and last_px is not None:
-            vol$ = round(last_px * vol_ct, 2)   # fallback approximation
+            vol_d = round(last_px * vol_ct, 2)   # fallback approximation
+
+
+        confirmed_ct = m.get("volume_24h", 0)
+        dollar_volume   = m.get("dollar_volume_24h", 0.0)
+        vwap         = m.get("vwap_24h")
+        if confirmed_ct == 0 and last_px is not None:
+            dollar_volume = round(last_px * vol_ct, 2)   # fallback approximation
 
         # ---------- markets ----------
         rows_m.append({
@@ -97,7 +119,9 @@ def main():
             "price":         round(last_px,4) if last_px is not None else None,
             "yes_bid":       yes_bid,           "no_bid": no_bid,
             "volume":        confirmed_ct or vol_ct,
-            "dollar_volume": vol$,
+            "dollar_volume": vol_d,
+
+            "dollar_volume": dollar_volume,
             "vwap":          vwap,
             "liquidity":     liquidity,
             "expiration":    expiration,

@@ -2,10 +2,10 @@
 
 *Fast, idempotent loaders for Kalshi & Polymarket → Supabase*
 
-[![Kalshi Full Fetch](https://github.com/yourname/predictionpulse-ingestion/actions/workflows/kalshi_fetch.yml/badge.svg)](https://github.com/yourname/predictionpulse-ingestion/actions/workflows/kalshi_fetch.yml)
-[![Kalshi Price Updates](https://github.com/yourname/predictionpulse-ingestion/actions/workflows/kalshi_update.yml/badge.svg)](https://github.com/yourname/predictionpulse-ingestion/actions/workflows/kalshi_update.yml)
-[![Polymarket Full Fetch](https://github.com/yourname/predictionpulse-ingestion/actions/workflows/polymarket-fetch.yml/badge.svg)](https://github.com/yourname/predictionpulse-ingestion/actions/workflows/polymarket-fetch.yml)
-[![Polymarket Price Updates](https://github.com/yourname/predictionpulse-ingestion/actions/workflows/polymarket_price_updates.yml/badge.svg)](https://github.com/yourname/predictionpulse-ingestion/actions/workflows/polymarket_price_updates.yml)
+[![Kalshi Full Fetch](https://github.com/yourname/predictionpulse-proxy/actions/workflows/kalshi_fetch.yml/badge.svg)](https://github.com/yourname/predictionpulse-proxy/actions/workflows/kalshi_fetch.yml)
+[![Kalshi Price Updates](https://github.com/yourname/predictionpulse-proxy/actions/workflows/kalshi_update.yml/badge.svg)](https://github.com/yourname/predictionpulse-proxy/actions/workflows/kalshi_update.yml)
+[![Polymarket Full Fetch](https://github.com/yourname/predictionpulse-proxy/actions/workflows/polymarket-fetch.yml/badge.svg)](https://github.com/yourname/predictionpulse-proxy/actions/workflows/polymarket-fetch.yml)
+[![Polymarket Price Updates](https://github.com/yourname/predictionpulse-proxy/actions/workflows/polymarket_price_updates.yml/badge.svg)](https://github.com/yourname/predictionpulse-proxy/actions/workflows/polymarket_price_updates.yml)
 
 ---
 
@@ -13,8 +13,8 @@
 
 ```bash
 # Clone & install
- git clone https://github.com/yourname/predictionpulse-ingestion.git
- cd predictionpulse-ingestion
+ git clone https://github.com/yourname/predictionpulse-proxy.git
+ cd predictionpulse-proxy
  pip install -r requirements.txt
 
 # Configure secrets
@@ -23,6 +23,7 @@
 # Run once to verify
  python kalshi_fetch.py               # daily metadata load
  python kalshi_update_prices.py       # single price snapshot
+ python market_news_summary.py        # summarize movers w/ news
 ```
 
 *Requires Python 3.11+*
@@ -38,6 +39,7 @@
 ├── kalshi_update_prices.py       # 5‑minute snapshots
 ├── polymarket_fetch.py           # daily full‑market load
 ├── polymarket_update_prices.py   # 5‑minute snapshots
+├── market_news_summary.py        # summarize big movers
 ├── requirements.txt
 ├── README.md
 └── .github/
@@ -59,7 +61,23 @@
 | `KALSHI_API_KEY`            | Kalshi personal API token             |
 | `POLYMARKET_API_KEY`        | (optional) higher quota for Gamma API |
 
-Add them to **`.env`** for local runs and **GitHub Secrets** for CI.
+See **`.env.example`** for a template and add them to **`.env`** for local runs. Store them in **GitHub Secrets** for CI.
+
+### Front-end config
+
+The demo page in `public/` reads credentials from `public/config.js`. Create it
+from the example and fill in your values:
+
+```bash
+cp public/config.example.js public/config.js
+# edit with your SUPABASE_URL and anon key
+# netlify.toml expects https://YOUR_PROJECT.supabase.co
+```
+
+`config.js` is ignored by git so your key won't be committed.
+
+The table on the demo page now includes an **AI Summary** column when the
+`latest_snapshots` view exposes a `summary` field.
 
 ---
 

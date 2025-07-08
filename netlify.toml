@@ -1,4 +1,8 @@
 # netlify.toml  ← put this at the root of your repo
+[build]
+command = "npm run build --prefix webapp"
+publish = "webapp/dist"
+
 [[headers]]
 for = "/*"
   [headers.values]
@@ -6,6 +10,6 @@ for = "/*"
     default-src 'self';
     script-src  'self' https://cdn.jsdelivr.net 'unsafe-eval';
     style-src   'self' 'unsafe-inline';
-    connect-src 'self' https://oedvfgnnheevwhpubvzf.supabase.co;
+    connect-src 'self' https://YOUR_PROJECT.supabase.co;
     img-src     'self' data:;
   """
