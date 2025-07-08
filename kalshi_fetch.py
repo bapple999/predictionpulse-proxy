@@ -48,6 +48,7 @@ def fetch_trade_stats(tkr: str):
                 vol_d   += t["size"] * t["price"]
         vwap = round(vol_d/vol_ct, 4) if vol_ct else None
         return round(vol_d,2), vol_ct, vwap
+
         dollar_volume, vol_ct = 0.0, 0
         for t in trades:
             if parser.parse(t["timestamp"]) >= cutoff:
@@ -91,7 +92,8 @@ def main():
         vol_d, confirmed_ct, vwap = fetch_trade_stats(tkr)
         if confirmed_ct==0 and last_px is not None:
             vol_d = round(last_px * vol_ct, 2)   # fallback approximation
-=======
+
+
         confirmed_ct = m.get("volume_24h", 0)
         dollar_volume   = m.get("dollar_volume_24h", 0.0)
         vwap         = m.get("vwap_24h")
@@ -118,6 +120,7 @@ def main():
             "yes_bid":       yes_bid,           "no_bid": no_bid,
             "volume":        confirmed_ct or vol_ct,
             "dollar_volume": vol_d,
+
             "dollar_volume": dollar_volume,
             "vwap":          vwap,
             "liquidity":     liquidity,
