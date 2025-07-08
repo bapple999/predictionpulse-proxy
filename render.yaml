@@ -10,19 +10,6 @@ services:
         sync: false
       - key: KALSHI_API_SECRET
         sync: false
-
-  - type: background
-    name: kalshi-ws-listener
-    env: python
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python kalshi_ws_live.py"
-    plan: free
-    envVars:
-      - key: KALSHI_API_KEY
-        sync: false
-      - key: KALSHI_API_SECRET
-        sync: false
-
   - type: cron
     name: polymarket-fetcher
     env: python
