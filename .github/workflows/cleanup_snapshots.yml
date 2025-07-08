@@ -1,0 +1,29 @@
+name: Cleanup Snapshots
+
+on:
+  schedule:
+    - cron: "0 7 * * *"          # daily @ 07:00 UTC
+  workflow_dispatch:
+
+jobs:
+  prune-snapshots:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Remove old snapshots
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          CUTOFF=$(date -u --iso-8601=seconds -d '90 days ago')
+          python cleanup_snapshots.py "$CUTOFF"

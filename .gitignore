@@ -1,0 +1,4 @@
+# Local environment files
+.env
+# Browser config with secrets
+public/config.js
