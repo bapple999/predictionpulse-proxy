@@ -1,4 +1,8 @@
 # netlify.toml  ← put this at the root of your repo
+[build]
+command = "npm run build --prefix webapp"
+publish = "webapp/dist"
+
 [[headers]]
 for = "/*"
   [headers.values]
