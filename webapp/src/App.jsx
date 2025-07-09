@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import './App.css'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_KEY
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 async function api(path) {
   const res = await fetch(`${SUPABASE_URL}${path}`, {
