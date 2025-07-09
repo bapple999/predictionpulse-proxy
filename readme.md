@@ -79,6 +79,18 @@ cp public/config.example.js public/config.js
 The table on the demo page now includes an **AI Summary** column when the
 `latest_snapshots` view exposes a `summary` field.
 
+### Troubleshooting
+
+If the page fails to load and the browser console shows errors like:
+
+```
+The source list for the Content Security Policy directive 'connect-src' contains an invalid source: 'https://YOUR_PROJECT.supabase.co'.
+GET https://<your-site>/config.js net::ERR_ABORTED 404 (Not Found)
+```
+
+then `config.js` was not found and `netlify.toml` still contains the placeholder project URL.
+Copy `public/config.example.js` to `public/config.js`, fill in your actual Supabase project URL and anon key, and update `netlify.toml` to use the same domain.
+
 ---
 
 ## 🔃 Scheduled jobs
