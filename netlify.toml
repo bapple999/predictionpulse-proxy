@@ -10,6 +10,7 @@ for = "/*"
     default-src 'self';
     script-src  'self' https://cdn.jsdelivr.net 'unsafe-eval';
     style-src   'self' 'unsafe-inline';
-    connect-src 'self' https://YOUR_PROJECT.supabase.co;
+    # Allow Supabase API requests; replace with your project URL for stricter CSP
+    connect-src 'self' https://*.supabase.co;
     img-src     'self' data:;
   """

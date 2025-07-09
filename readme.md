@@ -71,7 +71,8 @@ from the example and fill in your values:
 ```bash
 cp public/config.example.js public/config.js
 # edit with your SUPABASE_URL and anon key
-# netlify.toml expects https://YOUR_PROJECT.supabase.co
+# netlify.toml defaults to a wildcard CSP of https://*.supabase.co
+# you may replace it with your exact project URL for extra security
 ```
 
 `config.js` is ignored by git so your key won't be committed.
@@ -88,8 +89,8 @@ The source list for the Content Security Policy directive 'connect-src' contains
 GET https://<your-site>/config.js net::ERR_ABORTED 404 (Not Found)
 ```
 
-then `config.js` was not found and `netlify.toml` still contains the placeholder project URL.
-Copy `public/config.example.js` to `public/config.js`, fill in your actual Supabase project URL and anon key, and update `netlify.toml` to use the same domain.
+then `config.js` was not found and `netlify.toml` still contained the placeholder project URL.
+Copy `public/config.example.js` to `public/config.js`, fill in your actual Supabase project URL and anon key, and update `netlify.toml` to use your domain (or keep the wildcard).
 
 ---
 
