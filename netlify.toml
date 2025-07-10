@@ -8,8 +8,8 @@ for = "/*"
   [headers.values]
   Content-Security-Policy = """
     default-src 'self';
-    script-src  'self' https://cdn.jsdelivr.net 'unsafe-eval';
+    script-src  'self' https://cdn.jsdelivr.net;
     style-src   'self' 'unsafe-inline';
-    connect-src 'self' https://oedvfgnnheevwhpubvzf.supabase.co;
+    connect-src 'self' https://eypantouzmwgauobeywr.supabase.co;
     img-src     'self' data:;
   """
