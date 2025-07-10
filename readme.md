@@ -119,6 +119,18 @@ The `tags` column is `jsonb`; just pass a Python list (`["econ","CPI"]`).
 The `webapp/` directory contains a small React app built with [Vite](https://vitejs.dev/).
 Run `npm install` inside that folder and `npm run dev` to start a local preview.
 
+### Netlify
+
+Netlify doesn't run `npm install` automatically because the repo root lacks a
+`package.json`. The `netlify.toml` build command therefore installs the webapp
+dependencies explicitly:
+
+```toml
+[build]
+  command = "node generate-config.js && npm ci --prefix webapp && npm run --prefix webapp build"
+  publish = "webapp/dist"
+```
+
 ---
 
 ## 🛣 Roadmap
