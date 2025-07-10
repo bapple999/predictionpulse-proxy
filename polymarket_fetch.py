@@ -154,7 +154,7 @@ def main():
                 "market_id": mid,
                 "outcome_name": t["name"],
                 "price": p / 100,
-                "volume": None,
+                "volume": t.get("volume"),
                 "timestamp": ts,
                 "source": "polymarket",
             })
