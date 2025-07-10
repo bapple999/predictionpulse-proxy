@@ -1,4 +1,4 @@
-# ✅ kalshi_fetch.py – top 200 Kalshi markets ranked by 24h volume
+# ✅ kalshi_fetch.py – fetch all Kalshi markets using pagination
 
 import os, requests
 from datetime import datetime, timedelta
@@ -58,6 +58,7 @@ def fetch_trade_stats(tkr: str):
 def main():
     events = fetch_events()
     raw    = fetch_all_markets()
+    print(f"Fetched {len(raw)} Kalshi markets")
 
     # keep only actively trading markets, fetch 24h stats for ranking
     active = [m for m in raw if (m.get("status", "TRADING")).upper() == "TRADING"]
@@ -67,8 +68,8 @@ def main():
         m["dollar_volume_24h"] = dv
         m["vwap_24h"] = vw
 
-    # rank by past 24h volume
-    active = sorted(active, key=lambda m: m.get("volume_24h", 0), reverse=True)[:200]
+    # rank by past 24h volume but keep all markets
+    active = sorted(active, key=lambda m: m.get("volume_24h", 0), reverse=True)
 
     ts = datetime.utcnow().isoformat()+"Z"
     rows_m, rows_s, rows_o = [], [], []
@@ -131,6 +132,17 @@ def main():
     insert_to_supabase("market_snapshots", rows_s, conflict_key=None)
     insert_to_supabase("market_outcomes",  rows_o, conflict_key=None)
     print(f"✅ Inserted {len(rows_m)} markets, {len(rows_s)} snapshots, {len(rows_o)} outcomes")
+
+    # diagnostic: show last few rows from Supabase
+    diag_url = f"{SUPABASE_URL}/rest/v1/latest_snapshots?select=market_id,source,price&order=timestamp.desc&limit=3"
+    r = requests.get(diag_url, headers={
+        "apikey": SERVICE_KEY,
+        "Authorization": f"Bearer {SERVICE_KEY}"
+    })
+    if r.status_code == 200:
+        print("Latest snapshots sample:", r.json())
+    else:
+        print("⚠️ Diagnostics fetch failed", r.status_code, r.text[:150])
 
 if __name__ == "__main__":
     main()

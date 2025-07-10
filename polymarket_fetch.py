@@ -1,6 +1,6 @@
-# ✅ polymarket_fetch.py – top-200 Polymarket questions, YES price + $-volume
+# ✅ polymarket_fetch.py – full Polymarket market list with YES price + $-volume
 
-import time, requests, logging
+import os, time, requests, logging
 from datetime import datetime, timedelta
 from dateutil import parser
 from common import insert_to_supabase
@@ -13,18 +13,12 @@ CLOB   = "https://clob.polymarket.com/markets/{}"
 TRADES = "https://clob.polymarket.com/markets/{}/trades"
 
 # ───────────────── fetch helpers
-def fetch_gamma(limit=500, max_pages=30):
-    out, offset = [], 0
-    for _ in range(max_pages):
-        r = requests.get(GAMMA, params={"limit": limit, "offset": offset}, timeout=15)
-        if r.status_code == 429:
-            logging.warning("Gamma 429 – sleep 10 s"); time.sleep(10); continue
-        r.raise_for_status()
-        batch = r.json() if isinstance(r.json(), list) else r.json().get("markets", [])
-        if not batch: break
-        out.extend(batch); offset += limit
-        logging.info("fetched %s markets", len(out))
-    return out
+def fetch_gamma(limit=1000):
+    r = requests.get(f"https://gamma.polymarket.com/markets?limit={limit}")
+    r.raise_for_status()
+    markets = r.json().get("markets") if isinstance(r.json(), dict) else r.json()
+    logging.info("Fetched %s Polymarket markets", len(markets))
+    return markets
 
 def fetch_clob(mid: str, slug: str | None):
     for ident in (mid, slug):
@@ -66,7 +60,7 @@ def main():
         g["volume24Hr"] = float(g.get("volume24Hr") or 0)
         live.append(g)
 
-    top = sorted(live, key=lambda x: x["volume24Hr"], reverse=True)[:200]
+    top = sorted(live, key=lambda x: x["volume24Hr"], reverse=True)
     logging.info("selected %s live markets", len(top))
 
     ts = datetime.utcnow().isoformat() + "Z"
@@ -160,6 +154,17 @@ def main():
 
     logging.info("Inserted %s markets, %s snapshots, %s outcomes",
                  len(rows_m), len(rows_s), len(rows_o))
+
+    # diagnostics: fetch sample rows
+    diag_url = f"{os.environ['SUPABASE_URL']}/rest/v1/latest_snapshots?select=market_id,source,price&order=timestamp.desc&limit=3"
+    r = requests.get(diag_url, headers={
+        'apikey': os.environ['SUPABASE_SERVICE_ROLE_KEY'],
+        'Authorization': f"Bearer {os.environ['SUPABASE_SERVICE_ROLE_KEY']}"
+    })
+    if r.status_code == 200:
+        logging.info("Latest snapshots sample: %s", r.json())
+    else:
+        logging.warning("Diagnostics fetch failed %s: %s", r.status_code, r.text[:150])
 
 if __name__ == "__main__":
     main()
