@@ -6,6 +6,7 @@ __pycache__/
 # Local environment files
 .env
 public/config.js
+webapp/public/config.js
 
 # Node modules
 node_modules/
@@ -18,3 +19,4 @@ dist/
 .env
 # Browser config with secrets
 public/config.js
+webapp/public/config.js
