@@ -1,3 +1,7 @@
+[build]
+  command = "node generate-config.js && npm run --prefix webapp build"
+  publish = "webapp/dist"
+
 [[headers]]
 for = "/*"
   [headers.values]
