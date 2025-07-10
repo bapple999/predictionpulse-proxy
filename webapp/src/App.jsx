@@ -25,7 +25,7 @@ async function api(path) {
 
 function App() {
   const [rows, setRows] = useState([])
-  const [sortKey, setSortKey] = useState('volume')
+  const [sortKey, setSortKey] = useState('volume24h')
   const [sortDir, setSortDir] = useState('desc')
   const [filter, setFilter] = useState('all')
   const [error, setError] = useState('')
@@ -47,27 +47,74 @@ function App() {
       return
     }
     try {
-      let r = await api(
-        `/rest/v1/latest_snapshots?select=market_id,source,price,volume,timestamp,market_name,event_name,expiration&limit=1000`
+      const now = new Date().toISOString()
+      let markets = await api(
+        `/rest/v1/latest_snapshots` +
+        `?select=market_id,source,market_name,expiration,start_date,tags,volume` +
+        `&expiration=gt.${now}` +
+        `&order=volume.desc&limit=500`
       )
-      r = r.filter(row => (row.volume || 0) > 0)
-      r.sort((a, b) => (b.volume || 0) - (a.volume || 0))
-      if (!r.length) throw new Error('No rows after filter')
-      const idList = r.map(m => `'${m.market_id}'`).join(',')
+
+      if (!markets.length) throw new Error('No active markets')
+
+      const idList = markets.map(m => `'${m.market_id}'`).join(',')
       const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
-      const prev = await api(
-        `/rest/v1/market_snapshots?select=market_id,price&market_id=in.(${idList})&timestamp=gt.${since}&order=timestamp.desc`
+
+      const outcomes = await api(
+        `/rest/v1/market_outcomes` +
+        `?select=market_id,outcome_name,price,volume,timestamp` +
+        `&market_id=in.(${idList})&order=timestamp.desc`
       )
-      const prevPrice = {}
-      prev.forEach(p => (prevPrice[p.market_id] ??= p.price))
-      const dedup = Object.values(r.reduce((acc, row) => { acc[row.market_id] = row; return acc }, {}))
-      dedup.forEach(d => {
-        d.cleanPrice = d.price != null && d.price >= 0 && d.price <= 1 ? d.price : null
-        d.price24h = prevPrice[d.market_id]
-        d.changePct = d.cleanPrice != null && d.price24h != null ? ((d.cleanPrice - d.price24h) * 100).toFixed(2) : null
-        d.cleanSource = d.source.startsWith('polymarket') ? 'polymarket' : d.source
+
+      const latest = {}
+      outcomes.forEach(o => {
+        const key = `${o.market_id}|${o.outcome_name}`
+        if (!latest[key]) latest[key] = o
       })
-      setRows(dedup)
+
+      const prevRows = await api(
+        `/rest/v1/market_outcomes` +
+        `?select=market_id,outcome_name,price` +
+        `&market_id=in.(${idList})&timestamp=lt.${since}&order=timestamp.desc`
+      )
+
+      const prevPrice = {}
+      prevRows.forEach(p => {
+        const key = `${p.market_id}|${p.outcome_name}`
+        if (!prevPrice[key]) prevPrice[key] = p.price
+      })
+
+      const grouped = {}
+      Object.values(latest).forEach(o => {
+        o.price24h = prevPrice[`${o.market_id}|${o.outcome_name}`]
+        if (o.price != null && o.price24h != null) {
+          o.changePct = ((o.price - o.price24h) * 100).toFixed(2)
+        } else {
+          o.changePct = null
+        }
+        ;(grouped[o.market_id] ||= []).push(o)
+      })
+
+      const final = markets.map(m => {
+        const outs = grouped[m.market_id] || []
+        outs.sort((a, b) => (b.price ?? 0) - (a.price ?? 0))
+        const top = outs[0] || {}
+        return {
+          market_id: m.market_id,
+          market_name: m.market_name,
+          source: m.source.startsWith('polymarket') ? 'polymarket' : m.source,
+          expiration: m.expiration,
+          start_date: m.start_date,
+          tags: m.tags,
+          volume24h: top.volume,
+          topOutcome: top.outcome_name,
+          price: top.price,
+          changePct: top.changePct,
+          outcomes: outs
+        }
+      })
+
+      setRows(final)
     } catch (err) {
       console.error(err)
       setError('Failed to load market data.')
@@ -76,7 +123,7 @@ function App() {
   }
 
   const displayed = rows
-    .filter(r => filter === 'all' || r.cleanSource === filter)
+    .filter(r => filter === 'all' || r.source === filter)
     .sort((a, b) => {
       const va = a[sortKey] ?? -Infinity
       const vb = b[sortKey] ?? -Infinity
@@ -98,23 +145,39 @@ function App() {
           <thead>
             <tr>
               <th onClick={() => toggleSort('market_name')} data-sort="market_name">Market</th>
-              <th onClick={() => toggleSort('cleanSource')} data-sort="cleanSource">Source</th>
-              <th onClick={() => toggleSort('cleanPrice')} data-sort="cleanPrice">Price</th>
-              <th onClick={() => toggleSort('volume')} data-sort="volume">Volume</th>
-              <th onClick={() => toggleSort('expiration')} data-sort="expiration">Expiration</th>
+              <th>Top Outcome</th>
+              <th onClick={() => toggleSort('price')} data-sort="price">Price</th>
               <th onClick={() => toggleSort('changePct')} data-sort="changePct">24h Change</th>
+              <th onClick={() => toggleSort('volume24h')} data-sort="volume24h">24h Volume</th>
+              <th>Start Date</th>
+              <th onClick={() => toggleSort('expiration')} data-sort="expiration">End Date</th>
+              <th>Tags</th>
             </tr>
           </thead>
           <tbody>
             {displayed.map(row => (
-              <tr key={row.market_id}>
-                <td>{row.market_name || row.market_id}</td>
-                <td>{row.cleanSource}</td>
-                <td>{row.cleanPrice == null ? '—' : `${(row.cleanPrice * 100).toFixed(1)}%`}</td>
-                <td>{row.volume == null ? '—' : `$${Number(row.volume).toLocaleString()}`}</td>
-                <td>{row.expiration ? new Date(row.expiration).toLocaleDateString() : '—'}</td>
-                <td>{row.changePct == null ? '—' : `${row.changePct}%`}</td>
-              </tr>
+              <>
+                <tr key={row.market_id} className="market-row">
+                  <td>{row.market_name || row.market_id}</td>
+                  <td>{row.topOutcome || '—'}</td>
+                  <td>{row.price == null ? '—' : `${(row.price * 100).toFixed(1)}%`}</td>
+                  <td>{row.changePct == null ? '—' : `${row.changePct}%`}</td>
+                  <td>{row.volume24h == null ? '—' : row.volume24h.toLocaleString()}</td>
+                  <td>{row.start_date ? new Date(row.start_date).toLocaleDateString() : '—'}</td>
+                  <td>{row.expiration ? new Date(row.expiration).toLocaleDateString() : '—'}</td>
+                  <td>{(row.tags || []).join(', ')}</td>
+                </tr>
+                {row.outcomes.slice(1).map(o => (
+                  <tr key={`${row.market_id}-${o.outcome_name}`} className="outcome-row">
+                    <td></td>
+                    <td>{o.outcome_name}</td>
+                    <td>{o.price == null ? '—' : `${(o.price * 100).toFixed(1)}%`}</td>
+                    <td>{o.changePct == null ? '—' : `${o.changePct}%`}</td>
+                    <td>{o.volume == null ? '—' : o.volume.toLocaleString()}</td>
+                    <td colSpan="3"></td>
+                  </tr>
+                ))}
+              </>
             ))}
           </tbody>
         </table>
