@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import './App.css'
+import { fetchLatestSnapshots, supabase } from './lib/api.js'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -47,13 +48,8 @@ function App() {
       return
     }
     try {
-      const now = new Date().toISOString()
-      let markets = await api(
-        `/rest/v1/latest_snapshots` +
-        `?select=market_id,source,market_name,expiration,start_date,tags,volume` +
-        `&expiration=gt.${now}` +
-        `&order=volume.desc&limit=500`
-      )
+      let markets = await fetchLatestSnapshots()
+      console.log('Market data from Supabase:', markets.slice(0, 3))
 
       if (!markets.length) throw new Error('No active markets')
 
