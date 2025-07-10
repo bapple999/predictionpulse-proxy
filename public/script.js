@@ -1,11 +1,11 @@
 // Import Supabase credentials from config.js (not committed to git)
-import { SUPABASE_URL, SUPABASE_KEY } from "./config.js";
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js";
 
 let chart, sortKey = "volume", sortDir = "desc";
 let sourceFilter = "all", categoryFilter = "all";
 
 function api(path) {
-  if (!SUPABASE_URL || !SUPABASE_KEY || SUPABASE_URL.includes("YOUR_PROJECT")) {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || SUPABASE_URL.includes("YOUR_PROJECT")) {
     return Promise.reject(
       new Error(
         "Supabase credentials missing. Copy public/config.example.js to public/config.js and set your project URL and anon key."
@@ -13,7 +13,7 @@ function api(path) {
     );
   }
   return fetch(`${SUPABASE_URL}${path}`, {
-    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
     mode: "cors"
   }).then(async res => {
     if (!res.ok) throw new Error(`Supabase ${res.status}: ${await res.text()}`);

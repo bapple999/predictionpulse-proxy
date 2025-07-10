@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react'
 import './App.css'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 async function api(path) {
   const res = await fetch(`${SUPABASE_URL}${path}`, {
-    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
     mode: 'cors'
   })
   if (!res.ok) throw new Error(`Supabase ${res.status}: ${await res.text()}`)
