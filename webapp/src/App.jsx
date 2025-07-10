@@ -4,7 +4,17 @@ import './App.css'
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 
+function credentialsValid() {
+  return (
+    SUPABASE_URL &&
+    SUPABASE_KEY &&
+    !SUPABASE_URL.includes('your-project') &&
+    !SUPABASE_KEY.includes('your-project')
+  )
+}
+
 async function api(path) {
+  if (!credentialsValid()) throw new Error('Supabase credentials missing')
   const res = await fetch(`${SUPABASE_URL}${path}`, {
     headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
     mode: 'cors'
@@ -21,11 +31,21 @@ function App() {
   const [error, setError] = useState('')
 
   useEffect(() => {
+    if (!credentialsValid()) {
+      setError('Supabase credentials missing')
+      setRows([])
+      return
+    }
     loadMarkets()
   }, [sortKey, sortDir])
 
   async function loadMarkets() {
     setError('')
+    if (!credentialsValid()) {
+      setError('Supabase credentials missing')
+      setRows([])
+      return
+    }
     try {
       let r = await api(
         `/rest/v1/latest_snapshots?select=market_id,source,price,volume,timestamp,market_name,event_name,expiration&limit=1000`
