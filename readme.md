@@ -65,19 +65,19 @@ See **`.env.example`** for a template and add them to **`.env`** for local runs.
 
 ### Front-end config
 
-The demo page in `public/` reads credentials from `public/config.js`. Create it
-from the example and fill in your values:
+The React app in `webapp/` pulls Supabase credentials from environment
+variables. For local development:
 
 ```bash
-cp public/config.example.js public/config.js
-# edit with your SUPABASE_URL and anon key
-# netlify.toml expects https://YOUR_PROJECT.supabase.co
+cp webapp/.env.example webapp/.env
+# edit VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
 ```
 
-`config.js` is ignored by git so your key won't be committed.
+On Netlify, set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in your
+site settings. They will be injected at build time via `import.meta.env`.
 
-The table on the demo page now includes an **AI Summary** column when the
-`latest_snapshots` view exposes a `summary` field.
+The old static demo under `public/` still supports a `config.js` file for
+backwards compatibility.
 
 ### Troubleshooting
 
@@ -85,11 +85,10 @@ If the page fails to load and the browser console shows errors like:
 
 ```
 The source list for the Content Security Policy directive 'connect-src' contains an invalid source: 'https://YOUR_PROJECT.supabase.co'.
-GET https://<your-site>/config.js net::ERR_ABORTED 404 (Not Found)
 ```
 
-then `config.js` was not found and `netlify.toml` still contains the placeholder project URL.
-Copy `public/config.example.js` to `public/config.js`, fill in your actual Supabase project URL and anon key, and update `netlify.toml` to use the same domain.
+check that `VITE_SUPABASE_URL` in your Netlify settings matches your actual
+Supabase project URL. The React app will fail if these variables are missing.
 
 ---
 
@@ -127,7 +126,7 @@ dependencies explicitly:
 
 ```toml
 [build]
-  command = "node generate-config.js && npm ci --prefix webapp && npm run --prefix webapp build"
+  command = "npm ci --prefix webapp && npm run --prefix webapp build"
   publish = "webapp/dist"
 ```
 
