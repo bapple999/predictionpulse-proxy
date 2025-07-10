@@ -7,9 +7,9 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 function credentialsValid() {
   return (
     SUPABASE_URL &&
-    SUPABASE_KEY &&
+    SUPABASE_ANON_KEY &&
     !SUPABASE_URL.includes('your-project') &&
-    !SUPABASE_KEY.includes('your-project')
+    !SUPABASE_ANON_KEY.includes('your-project')
   )
 }
 
