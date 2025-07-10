@@ -1,5 +1,6 @@
 [build]
-  command = "node generate-config.js && npm run --prefix webapp build"
+  # install frontend deps since the repo root has no package.json
+  command = "node generate-config.js && npm ci --prefix webapp && npm run --prefix webapp build"
   publish = "webapp/dist"
 
 [[headers]]
