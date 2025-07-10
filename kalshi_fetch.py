@@ -2,7 +2,7 @@
 
 import os, requests
 from datetime import datetime, timedelta
-from dateutil import parser
+from dateutil.parser import parse
 from common import insert_to_supabase
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
@@ -44,7 +44,7 @@ def fetch_trade_stats(tkr: str):
 
         dollar_volume, vol_ct = 0.0, 0
         for t in trades:
-            if parser.parse(t["timestamp"]) >= cutoff:
+            if parse(t["timestamp"]) >= cutoff:
                 vol_ct += t["size"]
                 dollar_volume += t["size"] * t["price"]
 
@@ -75,6 +75,18 @@ def main():
     rows_m, rows_s, rows_o = [], [], []
 
     for m in active:
+        tkr      = m["ticker"]
+        event    = events.get(m.get("event_ticker")) or {}
+        last_px  = m.get("last_price")
+        yes_bid  = m.get("yes_bid")
+        no_bid   = m.get("no_bid")
+        vol_ct   = m.get("volume") or 0
+        liquidity= m.get("open_interest") or 0
+        exp_dt   = parse(m["close_time"]) if m.get("close_time") else None
+        expiration = exp_dt.isoformat() if exp_dt else None
+        status    = m.get("status") or "TRADING"
+        tags      = [tkr.split("/")[0]] if m.get("ticker") else ["kalshi"]
+        event_name = m.get("ticker") or m.get("event_ticker")
         tkr = m["ticker"]
         event = events.get(m.get("event_ticker")) or {}
         last_px = m.get("last_price")
@@ -96,11 +108,20 @@ def main():
         if confirmed_ct == 0 and last_px is not None:
             dollar_volume = round(last_px * vol_ct, 2)   # fallback approximation
 
+        print(f"Inserting market {tkr} with expiration {expiration}, status {status}, price {last_px}")
+
         # ---------- markets ----------
         rows_m.append({
             "market_id": tkr,
             "market_name": m.get("title") or m.get("description") or tkr,
             "market_description": m.get("description") or "",
+            "event_name":         event_name,
+            "event_ticker":       m.get("event_ticker") or "",
+            "expiration":         expiration,
+            "tags":               tags,
+            "source":             "kalshi",
+            "status":             status,
+
             "event_name": event.get("title") or event.get("name") or "",
             "event_ticker": m.get("event_ticker") or "",
             "expiration": expiration,
@@ -111,6 +132,12 @@ def main():
 
         # ---------- snapshot ----------
         rows_s.append({
+            "market_id":     tkr,
+            "price":         round(last_px,4) if last_px is not None else None,
+            "yes_bid":       yes_bid,
+            "no_bid":        no_bid,
+            "volume":        confirmed_ct or vol_ct,
+
             "market_id": tkr,
             "price": round(last_px, 4) if last_px is not None else None,
             "yes_bid": yes_bid,
@@ -139,6 +166,7 @@ def main():
     insert_to_supabase("market_snapshots", rows_s, conflict_key=None)
     insert_to_supabase("market_outcomes",  rows_o, conflict_key=None)
     print(f"✅ Inserted {len(rows_m)} markets, {len(rows_s)} snapshots, {len(rows_o)} outcomes")
+    print(f"Inserted {len(rows_m)} markets and {len(rows_o)} outcomes")
 
     # diagnostic: show last few rows from Supabase
     diag_url = f"{SUPABASE_URL}/rest/v1/latest_snapshots?select=market_id,source,price&order=timestamp.desc&limit=3"

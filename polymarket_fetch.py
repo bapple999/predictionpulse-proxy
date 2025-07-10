@@ -3,6 +3,7 @@
 import os, time, requests, logging
 from datetime import datetime, timedelta
 from dateutil import parser
+from dateutil.parser import parse
 from common import insert_to_supabase
 
 logging.basicConfig(level=logging.INFO,
@@ -13,6 +14,24 @@ CLOB   = "https://clob.polymarket.com/markets/{}"
 TRADES = "https://clob.polymarket.com/markets/{}/trades"
 
 # ───────────────── fetch helpers
+def fetch_gamma(limit: int = 500, max_pages: int = 30):
+    """Return full Polymarket market list via pagination."""
+    out, offset = [], 0
+    for _ in range(max_pages):
+        r = requests.get(GAMMA, params={"limit": limit, "offset": offset}, timeout=15)
+        if r.status_code == 429:
+            logging.warning("Gamma 429 – sleep 10 s")
+            time.sleep(10)
+            continue
+        r.raise_for_status()
+        batch = r.json() if isinstance(r.json(), list) else r.json().get("markets", [])
+        if not batch:
+            break
+        out.extend(batch)
+        offset += limit
+        logging.info("fetched %s markets", len(out))
+    return out
+
 def fetch_gamma(limit: int = 1000):
     """Return active Polymarket markets from the Gamma API."""
     params = {"limit": limit, "state": "trading"}
@@ -72,6 +91,42 @@ def main():
     rows_m, rows_s, rows_o = [], [], []
 
     for g in top:
+        mid  = g.get("id")
+        slug = g.get("slug")
+        title = g.get("title") or g.get("question") or (
+            slug.replace('-', ' ').title() if slug else mid
+        )
+        exp_raw = g.get("endDate") or g.get("endTime") or g.get("end_time")
+        exp_dt = parse(exp_raw) if exp_raw else None
+        exp    = exp_dt.isoformat() if exp_dt else None
+        status = g.get("status") or g.get("state") or "TRADING"
+        tags   = g.get("categories")
+        if not tags:
+            if g.get("category"):
+                tags = ["polymarket", g["category"].lower()]
+            else:
+                tags = ["polymarket"]
+
+        # ── order book / price
+        clob = fetch_clob(mid, slug)
+        tokens = (
+            clob.get("outcomes") or clob.get("outcomeTokens") or []
+        ) if clob else []
+
+        yes_tok = next(
+            (t for t in tokens if t.get("name", "").lower() == "yes"),
+            None,
+        )
+        price = None
+        if yes_tok:
+            price = yes_tok.get("price", yes_tok.get("probability"))
+            if price is not None:
+                price = price / 100
+
+        vol_d, vol_ct, vwap = last24h_stats(mid)
+
+        print(f"Inserting market {mid} with expiration {exp}, status {status}, price {price}")
+
         mid = g["id"]
         slug = g.get("slug")
         title = g.get("title") or g.get("question") or (
@@ -88,10 +143,13 @@ def main():
             "event_name": title,
             "event_ticker": slug or mid,
             "expiration": exp,
+            "tags": tags,
+
             "tags": g.get("categories") or ["polymarket"],
             "source": "polymarket",
-            "status": "TRADING",
+            "status": status,
         })
+
 
         # ── order book / price
         clob = fetch_clob(mid, slug)
@@ -173,6 +231,7 @@ def main():
 
     logging.info("Inserted %s markets, %s snapshots, %s outcomes",
                  len(rows_m), len(rows_s), len(rows_o))
+    print(f"Inserted {len(rows_m)} markets and {len(rows_o)} outcomes")
 
     # diagnostics: fetch sample rows
     diag_url = f"{os.environ['SUPABASE_URL']}/rest/v1/latest_snapshots?select=market_id,source,price&order=timestamp.desc&limit=3"
