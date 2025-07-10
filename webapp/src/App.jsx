@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import './App.css'
-import { fetchLatestSnapshots, supabase } from './lib/api.js'
+import { supabase } from './lib/api.js'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -48,7 +48,13 @@ function App() {
       return
     }
     try {
-      let markets = await fetchLatestSnapshots()
+      const now = new Date().toISOString()
+      const markets = await api(
+        `/rest/v1/latest_snapshots` +
+        `?select=market_id,source,market_name,expiration,tags,volume` +
+        `&expiration=gt.${now}` +
+        `&order=volume.desc&limit=500`
+      )
       console.log('Market data from Supabase:', markets.slice(0, 3))
 
       if (!markets.length) throw new Error('No active markets')
@@ -100,7 +106,6 @@ function App() {
           market_name: m.market_name,
           source: m.source.startsWith('polymarket') ? 'polymarket' : m.source,
           expiration: m.expiration,
-          start_date: m.start_date,
           tags: m.tags,
           volume24h: top.volume,
           topOutcome: top.outcome_name,
@@ -145,7 +150,6 @@ function App() {
               <th onClick={() => toggleSort('price')} data-sort="price">Price</th>
               <th onClick={() => toggleSort('changePct')} data-sort="changePct">24h Change</th>
               <th onClick={() => toggleSort('volume24h')} data-sort="volume24h">24h Volume</th>
-              <th>Start Date</th>
               <th onClick={() => toggleSort('expiration')} data-sort="expiration">End Date</th>
               <th>Tags</th>
             </tr>
@@ -159,7 +163,6 @@ function App() {
                   <td>{row.price == null ? '—' : `${(row.price * 100).toFixed(1)}%`}</td>
                   <td>{row.changePct == null ? '—' : `${row.changePct}%`}</td>
                   <td>{row.volume24h == null ? '—' : row.volume24h.toLocaleString()}</td>
-                  <td>{row.start_date ? new Date(row.start_date).toLocaleDateString() : '—'}</td>
                   <td>{row.expiration ? new Date(row.expiration).toLocaleDateString() : '—'}</td>
                   <td>{(row.tags || []).join(', ')}</td>
                 </tr>
