@@ -13,10 +13,13 @@ CLOB   = "https://clob.polymarket.com/markets/{}"
 TRADES = "https://clob.polymarket.com/markets/{}/trades"
 
 # ───────────────── fetch helpers
-def fetch_gamma(limit=1000):
-    r = requests.get(f"https://gamma.polymarket.com/markets?limit={limit}")
+def fetch_gamma(limit: int = 1000):
+    """Return active Polymarket markets from the Gamma API."""
+    params = {"limit": limit, "state": "trading"}
+    r = requests.get(GAMMA, params=params, timeout=15)
     r.raise_for_status()
-    markets = r.json().get("markets") if isinstance(r.json(), dict) else r.json()
+    data = r.json()
+    markets = data.get("markets") if isinstance(data, dict) else data
     logging.info("Fetched %s Polymarket markets", len(markets))
     return markets
 
@@ -54,9 +57,11 @@ def main():
 
     live = []
     for g in gamma_all:
-        if (g.get("status") or g.get("state") or "").upper() in closed: continue
+        if (g.get("status") or g.get("state") or "").upper() in closed:
+            continue
         exp = g.get("endDate") or g.get("endTime") or g.get("end_time")
-        if exp and exp <= now_iso: continue
+        if exp and exp <= now_iso:
+            continue
         g["volume24Hr"] = float(g.get("volume24Hr") or 0)
         live.append(g)
 
@@ -67,10 +72,13 @@ def main():
     rows_m, rows_s, rows_o = [], [], []
 
     for g in top:
-        mid  = g["id"]; slug = g.get("slug")
-        title = g.get("title") or g.get("question") or \
-                (slug.replace('-', ' ').title() if slug else mid)
-        exp   = g.get("endDate") or g.get("endTime") or g.get("end_time")
+        mid = g["id"]
+        slug = g.get("slug")
+        title = g.get("title") or g.get("question") or (
+            slug.replace("-", " ").title() if slug else mid
+        )
+        exp_raw = g.get("endDate") or g.get("endTime") or g.get("end_time")
+        exp = parser.parse(exp_raw).isoformat() if exp_raw else None
 
         # ── metadata
         rows_m.append({
@@ -80,16 +88,21 @@ def main():
             "event_name": title,
             "event_ticker": slug or mid,
             "expiration": exp,
-            "tags": g.get("categories") or [],
+            "tags": g.get("categories") or ["polymarket"],
             "source": "polymarket",
             "status": "TRADING",
         })
 
         # ── order book / price
         clob = fetch_clob(mid, slug)
-        tokens = (clob.get("outcomes") or clob.get("outcomeTokens") or []) if clob else []
+        tokens = (
+            clob.get("outcomes") or clob.get("outcomeTokens") or []
+        ) if clob else []
 
-        yes_tok = next((t for t in tokens if t.get("name", "").lower() == "yes"), None)
+        yes_tok = next(
+            (t for t in tokens if t.get("name", "").lower() == "yes"),
+            None,
+        )
         price = None
         if yes_tok:
             price = yes_tok.get("price", yes_tok.get("probability"))
@@ -98,12 +111,17 @@ def main():
 
         vol_d, vol_ct, vwap = last24h_stats(mid)
 
+        total_volume = int(
+            (clob.get("volume") if clob else None)
+            or g.get("volumeTotal")
+            or 0
+        )
         rows_s.append({
             "market_id": mid,
             "price": round(price, 4) if price is not None else None,
             "yes_bid": None,
             "no_bid": None,
-            "volume": vol_ct,
+            "volume": total_volume,
             "dollar_volume": vol_d,
             "vwap": vwap,
             "liquidity": float(g.get("liquidity") or 0),
@@ -116,12 +134,13 @@ def main():
         added = 0
         for t in tokens:
             p = t.get("price", t.get("probability"))
-            if p is None: continue
+            if p is None:
+                continue
             rows_o.append({
                 "market_id": mid,
                 "outcome_name": t["name"],
                 "price": p / 100,
-                "volume": None,
+                "volume": t.get("volume"),
                 "timestamp": ts,
                 "source": "polymarket",
             })

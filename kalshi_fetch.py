@@ -57,7 +57,7 @@ def fetch_trade_stats(tkr: str):
 # ---------- main ----------
 def main():
     events = fetch_events()
-    raw    = fetch_all_markets()
+    raw = fetch_all_markets()
     print(f"Fetched {len(raw)} Kalshi markets")
 
     # keep only actively trading markets, fetch 24h stats for ranking
@@ -75,13 +75,19 @@ def main():
     rows_m, rows_s, rows_o = [], [], []
 
     for m in active:
-        tkr      = m["ticker"]
-        event    = events.get(m.get("event_ticker")) or {}
-        last_px  = m.get("last_price")
-        yes_bid  = m.get("yes_bid");  no_bid = m.get("no_bid")
-        vol_ct   = m.get("volume") or 0
-        liquidity= m.get("open_interest") or 0
-        expiration = m.get("expiration")  # already ISO-8601 or None
+        tkr = m["ticker"]
+        event = events.get(m.get("event_ticker")) or {}
+        last_px = m.get("last_price")
+        yes_bid = m.get("yes_bid")
+        no_bid = m.get("no_bid")
+        vol_ct = m.get("volume") or 0
+        liquidity = m.get("open_interest") or 0
+        exp_raw = (
+            m.get("close_time")
+            or m.get("closeTime")
+            or m.get("expiration")
+        )
+        expiration = parser.parse(exp_raw).isoformat() if exp_raw else None
 
         # --- dollar vol / VWAP ---
         confirmed_ct = m.get("volume_24h", 0)
@@ -92,29 +98,30 @@ def main():
 
         # ---------- markets ----------
         rows_m.append({
-            "market_id":          tkr,
-            "market_name":        m.get("title") or m.get("description") or tkr,
+            "market_id": tkr,
+            "market_name": m.get("title") or m.get("description") or tkr,
             "market_description": m.get("description") or "",
-            "event_name":         event.get("title") or event.get("name") or "",
-            "event_ticker":       m.get("event_ticker") or "",
-            "expiration":         expiration,
-            "tags":               m.get("tags") or [],
-            "source":             "kalshi",
-            "status":             "TRADING",
+            "event_name": event.get("title") or event.get("name") or "",
+            "event_ticker": m.get("event_ticker") or "",
+            "expiration": expiration,
+            "tags": m.get("tags") or ["kalshi"],
+            "source": "kalshi",
+            "status": m.get("status") or "TRADING",
         })
 
         # ---------- snapshot ----------
         rows_s.append({
-            "market_id":     tkr,
-            "price":         round(last_px,4) if last_px is not None else None,
-            "yes_bid":       yes_bid,           "no_bid": no_bid,
-            "volume":        confirmed_ct or vol_ct,
+            "market_id": tkr,
+            "price": round(last_px, 4) if last_px is not None else None,
+            "yes_bid": yes_bid,
+            "no_bid": no_bid,
+            "volume": confirmed_ct or vol_ct,
             "dollar_volume": dollar_volume,
-            "vwap":          vwap,
-            "liquidity":     liquidity,
-            "expiration":    expiration,
-            "timestamp":     ts,
-            "source":        "kalshi",
+            "vwap": vwap,
+            "liquidity": liquidity,
+            "expiration": expiration,
+            "timestamp": ts,
+            "source": "kalshi",
         })
 
         # ---------- outcome (YES) ----------
