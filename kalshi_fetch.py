@@ -41,21 +41,15 @@ def fetch_trade_stats(tkr: str):
         r.raise_for_status()
         trades = r.json().get("trades", [])
         cutoff = datetime.utcnow() - timedelta(hours=24)
-        vol_d, vol_ct = 0.0, 0
-        for t in trades:
-            if parser.parse(t["timestamp"]) >= cutoff:
-                vol_ct += t["size"]
-                vol_d   += t["size"] * t["price"]
-        vwap = round(vol_d/vol_ct, 4) if vol_ct else None
-        return round(vol_d,2), vol_ct, vwap
 
         dollar_volume, vol_ct = 0.0, 0
         for t in trades:
             if parser.parse(t["timestamp"]) >= cutoff:
                 vol_ct += t["size"]
-                dollar_volume   += t["size"] * t["price"]
-        vwap = round(dollar_volume/vol_ct, 4) if vol_ct else None
-        return round(dollar_volume,2), vol_ct, vwap
+                dollar_volume += t["size"] * t["price"]
+
+        vwap = dollar_volume / vol_ct if vol_ct else None
+        return round(dollar_volume, 2), vol_ct, round(vwap, 4) if vwap else None
     except Exception as e:
         print(f"⚠️ Trade fetch failed for {tkr}: {e}")
         return 0.0, 0, None
@@ -89,14 +83,9 @@ def main():
         expiration = m.get("expiration")  # already ISO-8601 or None
 
         # --- dollar vol / VWAP ---
-        vol_d, confirmed_ct, vwap = fetch_trade_stats(tkr)
-        if confirmed_ct==0 and last_px is not None:
-            vol_d = round(last_px * vol_ct, 2)   # fallback approximation
-
-
         confirmed_ct = m.get("volume_24h", 0)
-        dollar_volume   = m.get("dollar_volume_24h", 0.0)
-        vwap         = m.get("vwap_24h")
+        dollar_volume = m.get("dollar_volume_24h", 0.0)
+        vwap = m.get("vwap_24h")
         if confirmed_ct == 0 and last_px is not None:
             dollar_volume = round(last_px * vol_ct, 2)   # fallback approximation
 
@@ -119,8 +108,6 @@ def main():
             "price":         round(last_px,4) if last_px is not None else None,
             "yes_bid":       yes_bid,           "no_bid": no_bid,
             "volume":        confirmed_ct or vol_ct,
-            "dollar_volume": vol_d,
-
             "dollar_volume": dollar_volume,
             "vwap":          vwap,
             "liquidity":     liquidity,
