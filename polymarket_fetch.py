@@ -32,6 +32,16 @@ def fetch_gamma(limit: int = 500, max_pages: int = 30):
         logging.info("fetched %s markets", len(out))
     return out
 
+def fetch_gamma(limit: int = 1000):
+    """Return active Polymarket markets from the Gamma API."""
+    params = {"limit": limit, "state": "trading"}
+    r = requests.get(GAMMA, params=params, timeout=15)
+    r.raise_for_status()
+    data = r.json()
+    markets = data.get("markets") if isinstance(data, dict) else data
+    logging.info("Fetched %s Polymarket markets", len(markets))
+    return markets
+
 def fetch_clob(mid: str, slug: str | None):
     for ident in (mid, slug):
         if not ident: continue
@@ -117,6 +127,14 @@ def main():
 
         print(f"Inserting market {mid} with expiration {exp}, status {status}, price {price}")
 
+        mid = g["id"]
+        slug = g.get("slug")
+        title = g.get("title") or g.get("question") or (
+            slug.replace("-", " ").title() if slug else mid
+        )
+        exp_raw = g.get("endDate") or g.get("endTime") or g.get("end_time")
+        exp = parser.parse(exp_raw).isoformat() if exp_raw else None
+
         # ── metadata
         rows_m.append({
             "market_id": mid,
@@ -126,16 +144,42 @@ def main():
             "event_ticker": slug or mid,
             "expiration": exp,
             "tags": tags,
+
+            "tags": g.get("categories") or ["polymarket"],
             "source": "polymarket",
             "status": status,
         })
 
+
+        # ── order book / price
+        clob = fetch_clob(mid, slug)
+        tokens = (
+            clob.get("outcomes") or clob.get("outcomeTokens") or []
+        ) if clob else []
+
+        yes_tok = next(
+            (t for t in tokens if t.get("name", "").lower() == "yes"),
+            None,
+        )
+        price = None
+        if yes_tok:
+            price = yes_tok.get("price", yes_tok.get("probability"))
+            if price is not None:
+                price = price / 100
+
+        vol_d, vol_ct, vwap = last24h_stats(mid)
+
+        total_volume = int(
+            (clob.get("volume") if clob else None)
+            or g.get("volumeTotal")
+            or 0
+        )
         rows_s.append({
             "market_id": mid,
             "price": round(price, 4) if price is not None else None,
             "yes_bid": None,
             "no_bid": None,
-            "volume": vol_ct,
+            "volume": total_volume,
             "dollar_volume": vol_d,
             "vwap": vwap,
             "liquidity": float(g.get("liquidity") or 0),
