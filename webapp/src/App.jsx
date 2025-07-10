@@ -49,12 +49,12 @@ function App() {
     }
     try {
       const now = new Date().toISOString()
-      const markets = await api(
+      const marketsRaw = await api(
         `/rest/v1/latest_snapshots` +
         `?select=market_id,source,market_name,expiration,tags,volume` +
-        `&expiration=gt.${now}` +
         `&order=volume.desc&limit=500`
       )
+      const markets = marketsRaw.filter(m => !m.expiration || m.expiration > now)
       console.log('Market data from Supabase:', markets.slice(0, 3))
 
       if (!markets.length) throw new Error('No active markets')
