@@ -65,8 +65,8 @@ See **`.env.example`** for a template and add them to **`.env`** for local runs.
 
 ### Front-end config
 
-The React app in `webapp/` pulls Supabase credentials from environment
-variables. For local development:
+The React app in `webapp/` uses just two environment variables:
+`VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`. For local development:
 
 ```bash
 cp webapp/.env.example webapp/.env
