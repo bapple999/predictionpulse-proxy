@@ -151,7 +151,8 @@ timestamp of the first snapshot as `start_date`. The front‑end queries columns
 ## 🖥 Frontend web app
 
 The `webapp/` directory contains a small React app built with [Vite](https://vitejs.dev/).
-Run `npm install` inside that folder and `npm run dev` to start a local preview.
+Run `npm install` inside that folder. For a strict Content Security Policy you should
+build the app with `npm run build` and then preview it using `npm run preview`.
 
 ### Key Features
 
