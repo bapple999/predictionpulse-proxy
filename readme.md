@@ -7,6 +7,17 @@
 [![Polymarket Full Fetch](https://github.com/yourname/predictionpulse-proxy/actions/workflows/polymarket-fetch.yml/badge.svg)](https://github.com/yourname/predictionpulse-proxy/actions/workflows/polymarket-fetch.yml)
 [![Polymarket Price Updates](https://github.com/yourname/predictionpulse-proxy/actions/workflows/polymarket_price_updates.yml/badge.svg)](https://github.com/yourname/predictionpulse-proxy/actions/workflows/polymarket_price_updates.yml)
 
+## 🎯 Purpose
+
+Prediction Pulse is an open-source project that aggregates prediction market data (Kalshi, Polymarket) and surfaces real-time, category-specific insights — enabling traders, analysts, and curious observers to understand market sentiment and react quickly.
+
+The platform aims to:
+
+- Aggregate markets from multiple sources in one place
+- Show the most active markets by volume and volatility
+- Break down trends by category (Economics, Politics, Sports, Pop Culture)
+- Use LLMs to automatically summarize major market movements and tie them to real-world news
+
 ---
 
 ## 🚀 Quick‑start (local)
@@ -42,6 +53,11 @@
 ├── market_news_summary.py        # summarize big movers
 ├── requirements.txt
 ├── README.md
+├── webapp/                      # React front-end powered by Vite
+│   ├── App.jsx
+│   ├── components/
+│   ├── pages/
+│   └── ...
 └── .github/
     └── workflows/
         ├── kalshi_fetch.yml
@@ -51,6 +67,16 @@
 ```
 
 ---
+
+## 🤖 AI-Powered Insights
+
+The `market_news_summary.py` script uses GPT-4 (via OpenAI API) to:
+
+- Detect the biggest movers across all markets
+- Summarize why the market may have moved (based on external news scraping)
+- Generate concise headlines for users or Discord/web notifications
+
+Planned: deeper summarization models that track *why* probabilities shift over time (e.g., "CPI odds fell after Fed comments").
 
 ## 🔑 Required environment variables
 
@@ -127,6 +153,14 @@ timestamp of the first snapshot as `start_date`. The front‑end queries columns
 The `webapp/` directory contains a small React app built with [Vite](https://vitejs.dev/).
 Run `npm install` inside that folder and `npm run dev` to start a local preview.
 
+### Key Features
+
+- Top Markets: ranked by trading volume and movement
+- Category Filters: quickly explore Sports, Politics, Economics, etc.
+- Market Detail Page: shows real-time price, volume, and resolution info
+- AI Insights: auto-generated explanations for major movers
+- Responsive UI for desktop and mobile
+
 ### Netlify
 
 Netlify doesn't run `npm install` automatically because the repo root lacks a
@@ -138,6 +172,12 @@ dependencies explicitly:
   command = "npm ci --prefix webapp && npm run --prefix webapp build"
   publish = "webapp/dist"
 ```
+
+## 🌐 Live Demo
+
+[View the app](https://your-netlify-site.netlify.app)
+
+Home screen shows the top 10 markets by volume, broken down by category. Users can drill down into each market to explore historical movement and view AI-generated insights.
 
 ---
 
