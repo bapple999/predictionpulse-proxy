@@ -1,5 +1,5 @@
 [build]
-  # install frontend deps since the repo root has no package.json
+  # Install frontend deps since the repo root has no package.json
   command = "npm ci --prefix webapp && npm run --prefix webapp build"
   publish = "webapp/dist"
 
@@ -10,4 +10,10 @@
 [[headers]]
 for = "/*"
   [headers.values]
-  Content-Security-Policy = "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; connect-src 'self' https://eypantouzmwgauobeywr.supabase.co; img-src 'self' data:;"
+  Content-Security-Policy = """
+    default-src 'self';
+    script-src  'self' https://cdn.jsdelivr.net;
+    style-src   'self' 'unsafe-inline';
+    connect-src 'self' https://eypantouzmwgauobeywr.supabase.co;
+    img-src     'self' data:;
+  """

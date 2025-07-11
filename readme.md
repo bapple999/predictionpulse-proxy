@@ -94,10 +94,9 @@ See **`.env.example`** for a template and add them to **`.env`** for local runs.
 The React app in `webapp/` uses just two environment variables:
 `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`. For local development:
 
-```bash
+
 cp webapp/.env.example webapp/.env
 # edit VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
-```
 
 On Netlify, set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in your
 site settings. They will be injected at build time via `import.meta.env`.
@@ -114,10 +113,12 @@ If the page fails to load and the browser console shows errors like:
 The source list for the Content Security Policy directive 'connect-src' contains an invalid source: 'https://YOUR_PROJECT.supabase.co'.
 ```
 
+then `config.js` was not found and `netlify.toml` still contained the placeholder project URL.
+
 check that `VITE_SUPABASE_URL` in your Netlify settings matches your actual
 Supabase project URL. The React app will fail if these variables are missing.
 
----
+
 
 ## 🔃 Scheduled jobs
 
