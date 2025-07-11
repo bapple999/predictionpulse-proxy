@@ -139,6 +139,7 @@ def main():
     insert_to_supabase("market_snapshots", rows_s, conflict_key=None)
     insert_to_supabase("market_outcomes",  rows_o, conflict_key=None)
     print(f"✅ Inserted {len(rows_m)} markets, {len(rows_s)} snapshots, {len(rows_o)} outcomes")
+    print(f"Inserted {len(rows_m)} markets and {len(rows_o)} outcomes")
 
     # diagnostic: show last few rows from Supabase
     diag_url = f"{SUPABASE_URL}/rest/v1/latest_snapshots?select=market_id,source,price&order=timestamp.desc&limit=3"
