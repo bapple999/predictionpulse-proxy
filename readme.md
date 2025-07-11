@@ -103,7 +103,8 @@ On Netlify, set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in your
 site settings. They will be injected at build time via `import.meta.env`.
 
 The old static demo under `public/` still supports a `config.js` file for
-backwards compatibility.
+backwards compatibility. It now imports Chart.js as an ES module so you can
+deploy with a strict CSP and omit `'unsafe-eval'`.
 
 ### Troubleshooting
 

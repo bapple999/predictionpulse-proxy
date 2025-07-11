@@ -1,5 +1,6 @@
 // Import Supabase credentials from config.js (not committed to git)
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js";
+import { Chart } from "https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.esm.min.js";
 
 let chart, sortKey = "volume", sortDir = "desc";
 let sourceFilter = "all", categoryFilter = "all";
