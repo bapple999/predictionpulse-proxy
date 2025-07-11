@@ -12,8 +12,9 @@ for = "/*"
   [headers.values]
   Content-Security-Policy = """
     default-src 'self';
-    script-src  'self' https://cdn.jsdelivr.net;
+    script-src  'self' https://cdn.jsdelivr.net 'unsafe-eval';
     style-src   'self' 'unsafe-inline';
     connect-src 'self' https://eypantouzmwgauobeywr.supabase.co;
     img-src     'self' data:;
   """
+
