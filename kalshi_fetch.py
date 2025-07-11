@@ -25,8 +25,7 @@ def fetch_all_markets(limit=1000):
     markets, cursor = [], None
     while True:
         params = {"limit": limit, **({"cursor": cursor} if cursor else {})}
-        j = requests.get(MARKETS_URL, headers=HEADERS_KALSHI,
-                         params=params, timeout=20).json()
+        j = requests.get(MARKETS_URL, headers=HEADERS_KALSHI, params=params, timeout=20).json()
         batch, cursor = j.get("markets", []), j.get("cursor")
         if not batch: break
         markets.extend(batch)
@@ -36,7 +35,7 @@ def fetch_all_markets(limit=1000):
 def fetch_trade_stats(tkr: str):
     try:
         r = requests.get(TRADES_URL.format(tkr), headers=HEADERS_KALSHI, timeout=10)
-        if r.status_code == 404:             # no trades yet
+        if r.status_code == 404:  # no trades yet
             return 0.0, 0, None
         r.raise_for_status()
         trades = r.json().get("trades", [])
@@ -68,7 +67,7 @@ def main():
         m["dollar_volume_24h"] = dv
         m["vwap_24h"] = vw
 
-    # rank by past 24h volume but keep all markets
+    # sort by past 24h volume
     active = sorted(active, key=lambda m: m.get("volume_24h", 0), reverse=True)
 
     ts = datetime.utcnow().isoformat()+"Z"
