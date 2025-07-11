@@ -7,6 +7,17 @@
 [![Polymarket Full Fetch](https://github.com/yourname/predictionpulse-proxy/actions/workflows/polymarket-fetch.yml/badge.svg)](https://github.com/yourname/predictionpulse-proxy/actions/workflows/polymarket-fetch.yml)
 [![Polymarket Price Updates](https://github.com/yourname/predictionpulse-proxy/actions/workflows/polymarket_price_updates.yml/badge.svg)](https://github.com/yourname/predictionpulse-proxy/actions/workflows/polymarket_price_updates.yml)
 
+## 🎯 Purpose
+
+Prediction Pulse is an open-source project that aggregates prediction market data (Kalshi, Polymarket) and surfaces real-time, category-specific insights — enabling traders, analysts, and curious observers to understand market sentiment and react quickly.
+
+The platform aims to:
+
+- Aggregate markets from multiple sources in one place
+- Show the most active markets by volume and volatility
+- Break down trends by category (Economics, Politics, Sports, Pop Culture)
+- Use LLMs to automatically summarize major market movements and tie them to real-world news
+
 ---
 
 ## 🚀 Quick‑start (local)
@@ -42,6 +53,11 @@
 ├── market_news_summary.py        # summarize big movers
 ├── requirements.txt
 ├── README.md
+├── webapp/                      # React front-end powered by Vite
+│   ├── App.jsx
+│   ├── components/
+│   ├── pages/
+│   └── ...
 └── .github/
     └── workflows/
         ├── kalshi_fetch.yml
@@ -51,6 +67,16 @@
 ```
 
 ---
+
+## 🤖 AI-Powered Insights
+
+The `market_news_summary.py` script uses GPT-4 (via OpenAI API) to:
+
+- Detect the biggest movers across all markets
+- Summarize why the market may have moved (based on external news scraping)
+- Generate concise headlines for users or Discord/web notifications
+
+Planned: deeper summarization models that track *why* probabilities shift over time (e.g., "CPI odds fell after Fed comments").
 
 ## 🔑 Required environment variables
 
@@ -65,20 +91,19 @@ See **`.env.example`** for a template and add them to **`.env`** for local runs.
 
 ### Front-end config
 
-The demo page in `public/` reads credentials from `public/config.js`. Create it
-from the example and fill in your values:
+The React app in `webapp/` uses just two environment variables:
+`VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`. For local development:
 
-```bash
-cp public/config.example.js public/config.js
-# edit with your SUPABASE_URL and anon key
-# netlify.toml defaults to a wildcard CSP of https://*.supabase.co
-# you may replace it with your exact project URL for extra security
-```
 
-`config.js` is ignored by git so your key won't be committed.
+cp webapp/.env.example webapp/.env
+# edit VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
 
-The table on the demo page now includes an **AI Summary** column when the
-`latest_snapshots` view exposes a `summary` field.
+On Netlify, set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in your
+site settings. They will be injected at build time via `import.meta.env`.
+
+The old static demo under `public/` still supports a `config.js` file for
+backwards compatibility. It now imports Chart.js as an ES module so you can
+deploy with a strict CSP and omit `'unsafe-eval'`.
 
 ### Troubleshooting
 
@@ -86,13 +111,14 @@ If the page fails to load and the browser console shows errors like:
 
 ```
 The source list for the Content Security Policy directive 'connect-src' contains an invalid source: 'https://YOUR_PROJECT.supabase.co'.
-GET https://<your-site>/config.js net::ERR_ABORTED 404 (Not Found)
 ```
 
 then `config.js` was not found and `netlify.toml` still contained the placeholder project URL.
-Copy `public/config.example.js` to `public/config.js`, fill in your actual Supabase project URL and anon key, and update `netlify.toml` to use your domain (or keep the wildcard).
 
----
+check that `VITE_SUPABASE_URL` in your Netlify settings matches your actual
+Supabase project URL. The React app will fail if these variables are missing.
+
+
 
 ## 🔃 Scheduled jobs
 
@@ -109,16 +135,52 @@ Full‑fetch jobs rebuild metadata once a day; lightweight update jobs keep quot
 
 ## 🗄 Supabase schema (jsonb ≈ arrays)
 
-* **`markets`** — static metadata
+SQL definitions live in [`schema.sql`](schema.sql).
+
+* **`markets`** — static metadata (primary key `market_id`)
 * **`market_snapshots`** — price / volume time‑series
 * **`market_outcomes`** — outcome‑level bids (Yes/No, Team A/Team B, etc.)
 
-The `tags` column is `jsonb`; just pass a Python list (`["econ","CPI"]`).
+`market_snapshots.market_id` and `market_outcomes.market_id` both reference
+`markets.market_id`.
+The `tags` column is `jsonb`; just pass a Python list (`["econ", "CPI"]`).
+
+The `latest_snapshots` view returns the most recent snapshot per market and the
+timestamp of the first snapshot as `start_date`. The front‑end queries columns
+`market_id`, `source`, `market_name`, `expiration`, `start_date`, `tags`,
+`price`, `volume`, `dollar_volume`, `liquidity` and `timestamp`.
 
 ## 🖥 Frontend web app
 
 The `webapp/` directory contains a small React app built with [Vite](https://vitejs.dev/).
-Run `npm install` inside that folder and `npm run dev` to start a local preview.
+Run `npm install` inside that folder. For a strict Content Security Policy you should
+build the app with `npm run build` and then preview it using `npm run preview`.
+
+### Key Features
+
+- Top Markets: ranked by trading volume and movement
+- Category Filters: quickly explore Sports, Politics, Economics, etc.
+- Market Detail Page: shows real-time price, volume, and resolution info
+- AI Insights: auto-generated explanations for major movers
+- Responsive UI for desktop and mobile
+
+### Netlify
+
+Netlify doesn't run `npm install` automatically because the repo root lacks a
+`package.json`. The `netlify.toml` build command therefore installs the webapp
+dependencies explicitly:
+
+```toml
+[build]
+  command = "npm ci --prefix webapp && npm run --prefix webapp build"
+  publish = "webapp/dist"
+```
+
+## 🌐 Live Demo
+
+[View the app](https://your-netlify-site.netlify.app)
+
+Home screen shows the top 10 markets by volume, broken down by category. Users can drill down into each market to explore historical movement and view AI-generated insights.
 
 ---
 
