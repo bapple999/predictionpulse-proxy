@@ -5,16 +5,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Prediction Pulse</title>
   <link rel="stylesheet" href="style.css">
-  <!-- Pre‑bundled Chart.js UMD build (CSP-safe) -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <!-- Chart.js loaded as ES module -->
 </head>
 <body>
   <h1>📊 Prediction Pulse: Top Markets</h1>
 
   <div class="filters">
-    <button data-filter="all">All</button>
-    <button data-filter="kalshi">Kalshi</button>
-    <button data-filter="polymarket">Polymarket</button>
+    <div>
+      <button data-filter="all">All</button>
+      <button data-filter="kalshi">Kalshi</button>
+      <button data-filter="polymarket">Polymarket</button>
+    </div>
+    <div class="categories">
+      <button data-cat="all">All</button>
+      <button data-cat="politics">Politics</button>
+      <button data-cat="economics">Economics</button>
+      <button data-cat="sports">Sports</button>
+      <button data-cat="pop">Pop Culture</button>
+    </div>
   </div>
 
   <p id="emptyMessage" style="display:none; color:gray;">No market data available.</p>
@@ -28,14 +36,21 @@
         <th data-sort="volume">Volume</th>
         <th data-sort="expiration">Expiration</th>
         <th data-sort="changePct">24h Change</th>
+        <th data-sort="change7dPct">7d Change</th>
+        <th data-sort="summary">AI Summary</th>
       </tr>
     </thead>
     <tbody id="marketTable"></tbody>
   </table>
 
+  <section id="trendingSection">
+    <h2>🔥 Trending Markets</h2>
+    <ul id="trendingList"></ul>
+  </section>
+
   <canvas id="trendChart" style="max-width: 600px; margin-top: 2rem;"></canvas>
 
-  <!-- Load custom script -->
-  <script src="script.js"></script>
+  <!-- Load main script which imports config.js for credentials -->
+  <script type="module" src="script.js"></script>
 </body>
 </html>

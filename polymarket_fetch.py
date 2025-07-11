@@ -1,8 +1,9 @@
-# ✅ polymarket_fetch.py – top-200 Polymarket questions, YES price + $-volume
+# ✅ polymarket_fetch.py – full Polymarket market list with YES price + $-volume
 
-import time, requests, logging
+import os, time, requests, logging
 from datetime import datetime, timedelta
 from dateutil import parser
+from dateutil.parser import parse
 from common import insert_to_supabase
 
 logging.basicConfig(level=logging.INFO,
@@ -13,16 +14,21 @@ CLOB   = "https://clob.polymarket.com/markets/{}"
 TRADES = "https://clob.polymarket.com/markets/{}/trades"
 
 # ───────────────── fetch helpers
-def fetch_gamma(limit=500, max_pages=30):
+def fetch_gamma(limit: int = 500, max_pages: int = 30):
+    """Return full Polymarket market list via pagination."""
     out, offset = [], 0
     for _ in range(max_pages):
         r = requests.get(GAMMA, params={"limit": limit, "offset": offset}, timeout=15)
         if r.status_code == 429:
-            logging.warning("Gamma 429 – sleep 10 s"); time.sleep(10); continue
+            logging.warning("Gamma 429 – sleep 10 s")
+            time.sleep(10)
+            continue
         r.raise_for_status()
         batch = r.json() if isinstance(r.json(), list) else r.json().get("markets", [])
-        if not batch: break
-        out.extend(batch); offset += limit
+        if not batch:
+            break
+        out.extend(batch)
+        offset += limit
         logging.info("fetched %s markets", len(out))
     return out
 
@@ -60,23 +66,56 @@ def main():
 
     live = []
     for g in gamma_all:
-        if (g.get("status") or g.get("state") or "").upper() in closed: continue
+        if (g.get("status") or g.get("state") or "").upper() in closed:
+            continue
         exp = g.get("endDate") or g.get("endTime") or g.get("end_time")
-        if exp and exp <= now_iso: continue
+        if exp and exp <= now_iso:
+            continue
         g["volume24Hr"] = float(g.get("volume24Hr") or 0)
         live.append(g)
 
-    top = sorted(live, key=lambda x: x["volume24Hr"], reverse=True)[:200]
+    top = sorted(live, key=lambda x: x["volume24Hr"], reverse=True)
     logging.info("selected %s live markets", len(top))
 
     ts = datetime.utcnow().isoformat() + "Z"
     rows_m, rows_s, rows_o = [], [], []
 
     for g in top:
-        mid  = g["id"]; slug = g.get("slug")
-        title = g.get("title") or g.get("question") or \
-                (slug.replace('-', ' ').title() if slug else mid)
-        exp   = g.get("endDate") or g.get("endTime") or g.get("end_time")
+        mid  = g.get("id")
+        slug = g.get("slug")
+        title = g.get("title") or g.get("question") or (
+            slug.replace('-', ' ').title() if slug else mid
+        )
+        exp_raw = g.get("endDate") or g.get("endTime") or g.get("end_time")
+        exp_dt = parse(exp_raw) if exp_raw else None
+        exp    = exp_dt.isoformat() if exp_dt else None
+        status = g.get("status") or g.get("state") or "TRADING"
+        tags   = g.get("categories")
+        if not tags:
+            if g.get("category"):
+                tags = ["polymarket", g["category"].lower()]
+            else:
+                tags = ["polymarket"]
+
+        # ── order book / price
+        clob = fetch_clob(mid, slug)
+        tokens = (
+            clob.get("outcomes") or clob.get("outcomeTokens") or []
+        ) if clob else []
+
+        yes_tok = next(
+            (t for t in tokens if t.get("name", "").lower() == "yes"),
+            None,
+        )
+        price = None
+        if yes_tok:
+            price = yes_tok.get("price", yes_tok.get("probability"))
+            if price is not None:
+                price = price / 100
+
+        vol_d, vol_ct, vwap = last24h_stats(mid)
+
+        print(f"Inserting market {mid} with expiration {exp}, status {status}, price {price}")
 
         # ── metadata
         rows_m.append({
@@ -86,23 +125,10 @@ def main():
             "event_name": title,
             "event_ticker": slug or mid,
             "expiration": exp,
-            "tags": g.get("categories") or [],
+            "tags": tags,
             "source": "polymarket",
-            "status": "TRADING",
+            "status": status,
         })
-
-        # ── order book / price
-        clob = fetch_clob(mid, slug)
-        tokens = (clob.get("outcomes") or clob.get("outcomeTokens") or []) if clob else []
-
-        yes_tok = next((t for t in tokens if t.get("name", "").lower() == "yes"), None)
-        price = None
-        if yes_tok:
-            price = yes_tok.get("price", yes_tok.get("probability"))
-            if price is not None:
-                price = price / 100
-
-        vol_d, vol_ct, vwap = last24h_stats(mid)
 
         rows_s.append({
             "market_id": mid,
@@ -122,12 +148,13 @@ def main():
         added = 0
         for t in tokens:
             p = t.get("price", t.get("probability"))
-            if p is None: continue
+            if p is None:
+                continue
             rows_o.append({
                 "market_id": mid,
                 "outcome_name": t["name"],
                 "price": p / 100,
-                "volume": None,
+                "volume": t.get("volume"),
                 "timestamp": ts,
                 "source": "polymarket",
             })
@@ -160,6 +187,18 @@ def main():
 
     logging.info("Inserted %s markets, %s snapshots, %s outcomes",
                  len(rows_m), len(rows_s), len(rows_o))
+    print(f"Inserted {len(rows_m)} markets and {len(rows_o)} outcomes")
+
+    # diagnostics: fetch sample rows
+    diag_url = f"{os.environ['SUPABASE_URL']}/rest/v1/latest_snapshots?select=market_id,source,price&order=timestamp.desc&limit=3"
+    r = requests.get(diag_url, headers={
+        'apikey': os.environ['SUPABASE_SERVICE_ROLE_KEY'],
+        'Authorization': f"Bearer {os.environ['SUPABASE_SERVICE_ROLE_KEY']}"
+    })
+    if r.status_code == 200:
+        logging.info("Latest snapshots sample: %s", r.json())
+    else:
+        logging.warning("Diagnostics fetch failed %s: %s", r.status_code, r.text[:150])
 
 if __name__ == "__main__":
     main()

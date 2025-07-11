@@ -1,11 +1,13 @@
-# netlify.toml  ← put this at the root of your repo
+[build]
+  # install frontend deps since the repo root has no package.json
+  command = "npm ci --prefix webapp && npm run --prefix webapp build"
+  publish = "webapp/dist"
+
+[build.environment]
+  # Skip Netlify secrets scanning for the public Supabase anon key
+  SECRETS_SCAN_OMIT_KEYS = "VITE_SUPABASE_KEY"
+
 [[headers]]
 for = "/*"
   [headers.values]
-  Content-Security-Policy = """
-    default-src 'self';
-    script-src  'self' https://cdn.jsdelivr.net 'unsafe-eval';
-    style-src   'self' 'unsafe-inline';
-    connect-src 'self' https://oedvfgnnheevwhpubvzf.supabase.co;
-    img-src     'self' data:;
-  """
+  Content-Security-Policy = "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; connect-src 'self' https://eypantouzmwgauobeywr.supabase.co; img-src 'self' data:;"
