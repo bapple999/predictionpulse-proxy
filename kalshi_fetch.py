@@ -1,6 +1,7 @@
 # ✅ kalshi_fetch.py – fetch all Kalshi markets using pagination
 
-import os, requests
+import os
+import requests
 from datetime import datetime, timedelta
 from dateutil.parser import parse
 from common import insert_to_supabase
@@ -15,6 +16,8 @@ HEADERS_KALSHI = {
 EVENTS_URL   = "https://api.elections.kalshi.com/trade-api/v2/events"
 MARKETS_URL  = "https://api.elections.kalshi.com/trade-api/v2/markets"
 TRADES_URL   = "https://api.elections.kalshi.com/trade-api/v2/markets/{}/trades"
+
+MIN_DOLLAR_VOLUME = 100
 
 # ---------- helpers ----------
 def fetch_events():
@@ -57,43 +60,56 @@ def fetch_trade_stats(tkr: str):
 # ---------- main ----------
 def main():
     events = fetch_events()
-    raw    = fetch_all_markets()
+    raw = fetch_all_markets()
     print(f"Fetched {len(raw)} Kalshi markets")
 
-    # keep only actively trading markets, fetch 24h stats for ranking
-    active = [m for m in raw if (m.get("status", "TRADING")).upper() == "TRADING"]
-    for m in active:
+    now = datetime.utcnow()
+    active = []
+    for m in raw:
+        if not m.get("ticker"):
+            continue
+
+        status = (m.get("status", "TRADING")).upper()
+        exp_raw = m.get("close_time") or m.get("closeTime")
+        exp_dt = parse(exp_raw) if exp_raw else None
+        if exp_dt and exp_dt <= now:
+            continue
+        if status != "TRADING":
+            continue
+
         dv, ct, vw = fetch_trade_stats(m["ticker"])
+        if dv < MIN_DOLLAR_VOLUME:
+            continue
         m["volume_24h"] = ct
         m["dollar_volume_24h"] = dv
         m["vwap_24h"] = vw
+        m["_expiration"] = exp_dt
+        active.append(m)
 
-    # rank by past 24h volume but keep all markets
-    active = sorted(active, key=lambda m: m.get("volume_24h", 0), reverse=True)
+    active = sorted(active, key=lambda m: m.get("dollar_volume_24h", 0), reverse=True)
 
     ts = datetime.utcnow().isoformat()+"Z"
     rows_m, rows_s, rows_o = [], [], []
 
     for m in active:
-        tkr      = m["ticker"]
+        tkr = m["ticker"]
         event    = events.get(m.get("event_ticker")) or {}
         last_px  = m.get("last_price")
         yes_bid  = m.get("yes_bid")
         no_bid   = m.get("no_bid")
-        vol_ct   = m.get("volume") or 0
-        liquidity= m.get("open_interest") or 0
-        exp_dt   = parse(m["close_time"]) if m.get("close_time") else None
+        vol_total = m.get("volume") or 0
+        liquidity = m.get("open_interest") or 0
+        exp_dt = m.get("_expiration")
         expiration = exp_dt.isoformat() if exp_dt else None
-        status    = m.get("status") or "TRADING"
-        tags      = [tkr.split("/")[0]] if m.get("ticker") else ["kalshi"]
+        status = m.get("status") or "TRADING"
+        tags = [tkr.split("/")[0]] if m.get("ticker") else ["kalshi"]
         event_name = m.get("ticker") or m.get("event_ticker")
 
-        # --- dollar vol / VWAP ---
         confirmed_ct = m.get("volume_24h", 0)
         dollar_volume = m.get("dollar_volume_24h", 0.0)
         vwap = m.get("vwap_24h")
-        if confirmed_ct == 0 and last_px is not None:
-            dollar_volume = round(last_px * vol_ct, 2)   # fallback approximation
+        if dollar_volume == 0 and last_px is not None:
+            dollar_volume = round(last_px * confirmed_ct, 2)
 
         print(f"Inserting market {tkr} with expiration {expiration}, status {status}, price {last_px}")
 
@@ -116,7 +132,7 @@ def main():
             "price":         round(last_px,4) if last_px is not None else None,
             "yes_bid":       yes_bid,
             "no_bid":        no_bid,
-            "volume":        confirmed_ct or vol_ct,
+            "volume":        confirmed_ct or vol_total,
             "dollar_volume": dollar_volume,
             "vwap":          vwap,
             "liquidity":     liquidity,
@@ -130,7 +146,7 @@ def main():
             "market_id":     tkr,
             "outcome_name":  "Yes",
             "price":         last_px,
-            "volume":        vol_ct,
+            "volume":        vol_total,
             "timestamp":     ts,
             "source":        "kalshi",
         })

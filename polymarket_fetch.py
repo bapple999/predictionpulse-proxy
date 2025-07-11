@@ -1,6 +1,9 @@
 # ✅ polymarket_fetch.py – full Polymarket market list with YES price + $-volume
 
-import os, time, requests, logging
+import os
+import time
+import requests
+import logging
 from datetime import datetime, timedelta
 from dateutil import parser
 from dateutil.parser import parse
@@ -12,6 +15,16 @@ logging.basicConfig(level=logging.INFO,
 GAMMA  = "https://gamma-api.polymarket.com/markets"
 CLOB   = "https://clob.polymarket.com/markets/{}"
 TRADES = "https://clob.polymarket.com/markets/{}/trades"
+
+MIN_DOLLAR_VOLUME = 100  # skip tiny or inactive markets
+
+
+def _first(obj: dict, keys: list[str]):
+    """Return the first present key from *obj*"""
+    for k in keys:
+        if k in obj and obj[k] is not None:
+            return obj[k]
+    return None
 
 # ───────────────── fetch helpers
 def fetch_gamma(limit: int = 500, max_pages: int = 30):
@@ -62,19 +75,58 @@ def main():
     gamma_all = fetch_gamma()
 
     closed = {"RESOLVED", "FINALIZED", "SETTLED", "CANCELLED"}
-    now_iso = datetime.utcnow().isoformat()
+    now = datetime.utcnow()
 
     live = []
     for g in gamma_all:
-        if (g.get("status") or g.get("state") or "").upper() in closed:
+        status = (g.get("status") or g.get("state") or "TRADING").upper()
+        if status in closed:
             continue
-        exp = g.get("endDate") or g.get("endTime") or g.get("end_time")
-        if exp and exp <= now_iso:
+
+        exp_raw = _first(g, ["end_date_iso", "endDate", "endTime", "end_time"])
+        exp_dt = parse(exp_raw) if exp_raw else None
+        if exp_dt and exp_dt <= now:
             continue
-        g["volume24Hr"] = float(g.get("volume24Hr") or 0)
+
+        price = _first(g, ["lastTradePrice", "lastPrice", "price"])
+        if price is not None and price > 1:
+            price = price / 100
+
+        volume = _first(g, ["volume24Hr", "volume24hr", "volume"])
+        try:
+            volume = float(volume)
+        except (TypeError, ValueError):
+            volume = 0.0
+
+        dollar_volume = _first(g, ["dollarVolume24Hr", "dollar_volume_24hr"])
+        if dollar_volume is None and price is not None:
+            dollar_volume = round(price * volume, 2)
+        else:
+            try:
+                dollar_volume = float(dollar_volume)
+            except (TypeError, ValueError):
+                dollar_volume = 0.0
+
+        if dollar_volume < MIN_DOLLAR_VOLUME:
+            continue
+
+        tags = []
+        if g.get("category"):
+            tags.append(str(g["category"]).lower())
+        if g.get("categories"):
+            tags.extend([str(t).lower() for t in g["categories"]])
+
+        g.update({
+            "_price": price,
+            "_volume24h": volume,
+            "_dollar_volume": dollar_volume,
+            "_expiration": exp_dt,
+            "_tags": tags or ["polymarket"],
+            "_status": status,
+        })
         live.append(g)
 
-    top = sorted(live, key=lambda x: x["volume24Hr"], reverse=True)
+    top = sorted(live, key=lambda x: x.get("_dollar_volume", 0), reverse=True)
     logging.info("selected %s live markets", len(top))
 
     ts = datetime.utcnow().isoformat() + "Z"
@@ -86,34 +138,28 @@ def main():
         title = g.get("title") or g.get("question") or (
             slug.replace('-', ' ').title() if slug else mid
         )
-        exp_raw = g.get("endDate") or g.get("endTime") or g.get("end_time")
-        exp_dt = parse(exp_raw) if exp_raw else None
-        exp    = exp_dt.isoformat() if exp_dt else None
-        status = g.get("status") or g.get("state") or "TRADING"
-        tags   = g.get("categories")
-        if not tags:
-            if g.get("category"):
-                tags = ["polymarket", g["category"].lower()]
-            else:
-                tags = ["polymarket"]
 
-        # ── order book / price
+        exp_dt = g.get("_expiration")
+        exp = exp_dt.isoformat() if exp_dt else None
+        status = g.get("_status") or "TRADING"
+        tags   = g.get("_tags") or ["polymarket"]
+
+        # ── use CLOB YES price if available, else last trade price
+        price = g.get("_price")
         clob = fetch_clob(mid, slug)
         tokens = (
             clob.get("outcomes") or clob.get("outcomeTokens") or []
         ) if clob else []
 
-        yes_tok = next(
-            (t for t in tokens if t.get("name", "").lower() == "yes"),
-            None,
-        )
-        price = None
+        yes_tok = next((t for t in tokens if t.get("name", "").lower() == "yes"), None)
         if yes_tok:
-            price = yes_tok.get("price", yes_tok.get("probability"))
-            if price is not None:
-                price = price / 100
+            alt = yes_tok.get("price", yes_tok.get("probability"))
+            if alt is not None:
+                price = alt / 100
 
-        vol_d, vol_ct, vwap = last24h_stats(mid)
+        volume = g.get("_volume24h", 0)
+        dollar_volume = g.get("_dollar_volume", 0)
+        vwap = None
 
         print(f"Inserting market {mid} with expiration {exp}, status {status}, price {price}")
 
@@ -135,8 +181,8 @@ def main():
             "price": round(price, 4) if price is not None else None,
             "yes_bid": None,
             "no_bid": None,
-            "volume": vol_ct,
-            "dollar_volume": vol_d,
+            "volume": int(volume),
+            "dollar_volume": dollar_volume,
             "vwap": vwap,
             "liquidity": float(g.get("liquidity") or 0),
             "expiration": exp,
