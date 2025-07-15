@@ -1,11 +1,10 @@
 # ✅ polymarket_fetch.py – fetch Polymarket markets with price + dollar volume
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from dateutil.parser import parse
 from common import insert_to_supabase, fetch_gamma, fetch_clob, last24h_stats
 
-MIN_DOLLAR_VOLUME = 100
 
 
 def _first(obj: dict, keys: list[str]):
@@ -18,13 +17,10 @@ def _first(obj: dict, keys: list[str]):
 def main():
     gamma_all = fetch_gamma()
     now = datetime.now(timezone.utc)
-    closed = {"RESOLVED", "FINALIZED", "SETTLED", "CANCELLED"}
     live = []
 
     for g in gamma_all:
         status = (g.get("status") or g.get("state") or "TRADING").upper()
-        if status in closed:
-            continue
 
         exp_raw = _first(g, ["end_date_iso", "endDate", "endTime", "end_time"])
         exp_dt = parse(exp_raw) if exp_raw else None
@@ -33,8 +29,10 @@ def main():
                 exp_dt = exp_dt.replace(tzinfo=timezone.utc)
             else:
                 exp_dt = exp_dt.astimezone(timezone.utc)
-        if exp_dt and exp_dt <= now:
-            continue
+            if exp_dt <= now:
+                continue
+            if exp_dt - now > timedelta(days=3):
+                continue
 
         price = _first(g, ["lastTradePrice", "lastPrice", "price"])
         if price and price > 1:
@@ -54,9 +52,6 @@ def main():
                 dollar_volume = float(dollar_volume)
             except (TypeError, ValueError):
                 dollar_volume = 0.0
-
-        if dollar_volume < MIN_DOLLAR_VOLUME:
-            continue
 
         tags = []
         if g.get("category"):
@@ -112,8 +107,6 @@ def main():
             vol_ct = g.get("_volume24h", 0)
             if vwap is None:
                 vwap = price if price is not None else None
-        if vol_d < MIN_DOLLAR_VOLUME:
-            continue
 
         logging.info(
             "Inserting market %s — price: %s, $vol: %s, exp: %s",

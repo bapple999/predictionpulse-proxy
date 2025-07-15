@@ -33,8 +33,6 @@ TRADES_URL  = os.environ.get(
     "https://api.elections.kalshi.com/trade-api/v2/markets/{}/trades",
 )
 
-# Minimum dollar volume for a market to be considered "high volume"
-MIN_DOLLAR_VOLUME = 5000
 
 # ---------- helpers ----------
 def fetch_events():
@@ -108,24 +106,16 @@ def main():
                 exp_dt = exp_dt.replace(tzinfo=timezone.utc)
             else:
                 exp_dt = exp_dt.astimezone(timezone.utc)
-        is_active = status == "TRADING" and (not exp_dt or exp_dt > now)
+            if exp_dt <= now:
+                print(f"Skipping {ticker}: already expired")
+                skipped += 1
+                continue
+            if exp_dt - now > timedelta(days=3):
+                print(f"Skipping {ticker}: expires beyond 3 days")
+                skipped += 1
+                continue
 
         dv, ct, vw = stats_map.get(ticker, (None, 0, None))
-        if dv is None:
-            # volume unavailable -> skip filtering
-            is_high_vol = True
-        else:
-            is_high_vol = dv >= MIN_DOLLAR_VOLUME
-
-        if not (is_active or is_high_vol):
-            reason = []
-            if not is_active:
-                reason.append("inactive")
-            if not is_high_vol:
-                reason.append(f"volume ${dv}")
-            print(f"Skipping {ticker}: {'; '.join(reason)}")
-            skipped += 1
-            continue
 
         m["volume_24h"] = ct
         m["dollar_volume_24h"] = dv
