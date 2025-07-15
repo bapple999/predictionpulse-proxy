@@ -2,7 +2,7 @@ import os
 import requests
 from datetime import datetime, timedelta
 from dateutil import parser
-from common import insert_to_supabase
+from common import insert_to_supabase, fetch_stats_concurrent
 
 # refresh prices for the most active Kalshi markets (24h volume)
 
@@ -100,14 +100,20 @@ def main():
     ts = datetime.utcnow().isoformat() + "Z"
     markets = fetch_all_markets()
 
-    # fetch 24h trade stats for ranking
+    # fetch 24h trade stats for ranking concurrently
+    tickers = [m.get("ticker") for m in markets if m.get("ticker")]
+    stats_list, failed = fetch_stats_concurrent(tickers, fetch_trade_stats)
+    stats_map = {mid: stats for mid, stats in stats_list}
     for m in markets:
-        if not m.get("ticker"):
+        tkr = m.get("ticker")
+        if not tkr:
             continue
-        dv, ct, vw = fetch_trade_stats(m["ticker"])
+        dv, ct, vw = stats_map.get(tkr, (0.0, 0, None))
         m["volume_24h"] = ct
         m["dollar_volume_24h"] = dv
         m["vwap_24h"] = vw
+    if failed:
+        print("⚠️ Failed trade stats for:", failed)
 
     # rank by past 24h volume
     top_markets = sorted(
