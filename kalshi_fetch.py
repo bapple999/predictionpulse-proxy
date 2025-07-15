@@ -17,7 +17,8 @@ EVENTS_URL   = "https://api.elections.kalshi.com/trade-api/v2/events"
 MARKETS_URL  = "https://api.elections.kalshi.com/trade-api/v2/markets"
 TRADES_URL   = "https://api.elections.kalshi.com/trade-api/v2/markets/{}/trades"
 
-MIN_DOLLAR_VOLUME = 100
+# Minimum dollar volume for a market to be considered "high volume"
+MIN_DOLLAR_VOLUME = 5000
 
 # ---------- helpers ----------
 def fetch_events():
@@ -39,7 +40,7 @@ def fetch_trade_stats(tkr: str):
     try:
         r = requests.get(TRADES_URL.format(tkr), headers=HEADERS_KALSHI, timeout=10)
         if r.status_code == 404:
-            return 0.0, 0, None
+            return None, 0, None
         r.raise_for_status()
         trades = r.json().get("trades", [])
         cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
@@ -59,7 +60,7 @@ def fetch_trade_stats(tkr: str):
         return round(dollar_volume, 2), vol_ct, round(vwap, 4) if vwap else None
     except Exception as e:
         print(f"⚠️ Trade fetch failed for {tkr}: {e}")
-        return 0.0, 0, None
+        return None, 0, None
 
 # ---------- main ----------
 def main():
@@ -68,40 +69,57 @@ def main():
     print(f"Fetched {len(raw)} Kalshi markets")
 
     now = datetime.now(timezone.utc)
-    active = []
+    kept = []
+    skipped = 0
     for m in raw:
-        if not m.get("ticker"):
+        ticker = m.get("ticker")
+        if not ticker:
+            print("Skipping market without ticker")
+            skipped += 1
             continue
 
         status = (m.get("status", "TRADING")).upper()
-        exp_raw = m.get("close_time") or m.get("closeTime")
+        exp_raw = m.get("close_time") or m.get("closeTime") or m.get("expiration")
         exp_dt = parse(exp_raw) if exp_raw else None
         if exp_dt:
             if exp_dt.tzinfo is None:
                 exp_dt = exp_dt.replace(tzinfo=timezone.utc)
             else:
                 exp_dt = exp_dt.astimezone(timezone.utc)
-        if exp_dt and exp_dt <= now:
-            continue
-        if status != "TRADING":
+        is_active = status == "TRADING" and (not exp_dt or exp_dt > now)
+
+        dv, ct, vw = fetch_trade_stats(ticker)
+        if dv is None:
+            # volume unavailable -> skip filtering
+            is_high_vol = True
+        else:
+            is_high_vol = dv >= MIN_DOLLAR_VOLUME
+
+        if not (is_active or is_high_vol):
+            reason = []
+            if not is_active:
+                reason.append("inactive")
+            if not is_high_vol:
+                reason.append(f"volume ${dv}")
+            print(f"Skipping {ticker}: {'; '.join(reason)}")
+            skipped += 1
             continue
 
-        dv, ct, vw = fetch_trade_stats(m["ticker"])
-        if dv < MIN_DOLLAR_VOLUME:
-            continue
         m["volume_24h"] = ct
         m["dollar_volume_24h"] = dv
         m["vwap_24h"] = vw
         m["_expiration"] = exp_dt
-        active.append(m)
+        kept.append(m)
 
     # ✅ unified logic: sort by dollar volume descending
-    active = sorted(active, key=lambda m: m.get("dollar_volume_24h", 0), reverse=True)
+    kept = sorted(kept, key=lambda m: m.get("dollar_volume_24h", 0), reverse=True)
+
+    print(f"Filtered down to {len(kept)} markets (skipped {skipped})")
 
     ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     rows_m, rows_s, rows_o = [], [], []
 
-    for m in active:
+    for m in kept:
         tkr = m["ticker"]
         event    = events.get(m.get("event_ticker")) or {}
         last_px  = m.get("last_price")
