@@ -7,13 +7,11 @@ from common import insert_to_supabase, fetch_gamma, fetch_clob, last24h_stats
 
 MIN_DOLLAR_VOLUME = 100
 
-
 def _first(obj: dict, keys: list[str]):
     for k in keys:
         if k in obj and obj[k] is not None:
             return obj[k]
     return None
-
 
 def main():
     gamma_all = fetch_gamma()
@@ -95,22 +93,17 @@ def main():
         status = g.get("_status") or "TRADING"
         tags = g.get("_tags") or ["polymarket"]
 
-        # Prefer YES price from CLOB
         price = g.get("_price")
         clob = fetch_clob(mid, slug)
-        tokens = []
-        if clob:
-            tokens = clob.get("outcomes") or clob.get("outcomeTokens") or []
-
-        yes_tok = next(
-            (t for t in tokens if t.get("name", "").lower() == "yes"), None
+        tokens = (
+            (clob.get("outcomes") or clob.get("outcomeTokens") or []) if clob else []
         )
+        yes_tok = next((t for t in tokens if t.get("name", "").lower() == "yes"), None)
         if yes_tok:
             alt = yes_tok.get("price", yes_tok.get("probability"))
             if alt is not None:
                 price = alt / 100
 
-        # Override volume and dollar volume using actual trades
         vol_d, vol_ct, vwap = last24h_stats(mid)
         if vol_d == 0.0:
             vol_d = g.get("_dollar_volume", 0.0)
