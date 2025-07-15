@@ -95,7 +95,6 @@ def main():
         status = g.get("_status") or "TRADING"
         tags = g.get("_tags") or ["polymarket"]
 
-        # Prefer YES price from CLOB
         price = g.get("_price")
         clob = fetch_clob(mid, slug)
         tokens = (
@@ -107,12 +106,22 @@ def main():
             if alt is not None:
                 price = alt / 100
 
-        # Override volume and dollar_volume using actual trades
         vol_d, vol_ct, vwap = last24h_stats(mid)
+        if vol_d == 0.0:
+            vol_d = g.get("_dollar_volume", 0.0)
+            vol_ct = g.get("_volume24h", 0)
+            if vwap is None:
+                vwap = price if price is not None else None
         if vol_d < MIN_DOLLAR_VOLUME:
             continue
 
-        print(f"Inserting market {mid} — price: {price}, $vol: {vol_d}, exp: {exp}")
+        logging.info(
+            "Inserting market %s — price: %s, $vol: %s, exp: %s",
+            mid,
+            price,
+            vol_d,
+            exp,
+        )
 
         rows_m.append(
             {
