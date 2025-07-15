@@ -1,9 +1,16 @@
 # ✅ polymarket_fetch.py – fetch Polymarket markets with price + dollar volume
 
+import os
 import logging
 from datetime import datetime, timezone, timedelta
 from dateutil.parser import parse
-from common import insert_to_supabase, fetch_gamma, fetch_clob, last24h_stats
+import requests
+from common import (
+    insert_to_supabase,
+    fetch_clob,
+    last24h_stats,
+    GAMMA_URL,
+)
 
 
 
@@ -14,8 +21,40 @@ def _first(obj: dict, keys: list[str]):
     return None
 
 
+def fetch_gamma_markets(limit: int = 250, max_pages: int = 10) -> list:
+    """Return upcoming active markets using Gamma API pagination."""
+    headers = {}
+    api_key = os.environ.get("POLYMARKET_API_KEY")
+    if api_key:
+        headers["X-API-Key"] = api_key
+
+    end_dt = datetime.utcnow() + timedelta(days=3)
+    end_date_max = end_dt.isoformat(timespec="seconds") + "Z"
+
+    markets = []
+    offset = 0
+    for _ in range(max_pages):
+        params = {
+            "limit": limit,
+            "offset": offset,
+            "active": "true",
+            "end_date_max": end_date_max,
+        }
+        r = requests.get(GAMMA_URL, headers=headers, params=params, timeout=15)
+        r.raise_for_status()
+        j = r.json()
+        batch = j.get("markets") if isinstance(j, dict) else j
+        if not batch:
+            break
+        markets.extend(batch)
+        if len(batch) < limit:
+            break
+        offset += limit
+    return markets
+
+
 def main():
-    gamma_all = fetch_gamma()
+    gamma_all = fetch_gamma_markets()
     now = datetime.now(timezone.utc)
     live = []
 
