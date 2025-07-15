@@ -9,13 +9,29 @@ from common import insert_to_supabase
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SERVICE_KEY  = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 
+KALSHI_API_KEY = os.environ.get("KALSHI_API_KEY")
+if not KALSHI_API_KEY:
+    raise RuntimeError("KALSHI_API_KEY must be set")
+
 HEADERS_KALSHI = {
-    "Authorization": f"Bearer {os.environ['KALSHI_API_KEY']}",
+    "Authorization": f"Bearer {KALSHI_API_KEY}",
     "Content-Type":  "application/json",
 }
-EVENTS_URL   = "https://api.elections.kalshi.com/trade-api/v2/events"
-MARKETS_URL  = "https://api.elections.kalshi.com/trade-api/v2/markets"
-TRADES_URL   = "https://api.elections.kalshi.com/trade-api/v2/markets/{}/trades"
+
+# Allow overriding the Kalshi endpoints so a proxy can be used when direct
+# network access is restricted.
+EVENTS_URL  = os.environ.get(
+    "KALSHI_EVENTS_URL",
+    "https://api.elections.kalshi.com/trade-api/v2/events",
+)
+MARKETS_URL = os.environ.get(
+    "KALSHI_MARKETS_URL",
+    "https://api.elections.kalshi.com/trade-api/v2/markets",
+)
+TRADES_URL  = os.environ.get(
+    "KALSHI_TRADES_URL",
+    "https://api.elections.kalshi.com/trade-api/v2/markets/{}/trades",
+)
 
 # Minimum dollar volume for a market to be considered "high volume"
 MIN_DOLLAR_VOLUME = 5000
