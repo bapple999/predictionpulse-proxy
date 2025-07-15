@@ -30,6 +30,7 @@ The platform aims to:
 
 # Configure secrets
  cp .env.example .env      # fill SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, KALSHI_API_KEY, POLYMARKET_API_KEY
+                           # (optionally) POLYMARKET_CLOB_URL & POLYMARKET_TRADES_URL if using a proxy
 
 # Run once to verify
  python kalshi_fetch.py               # daily metadata load
@@ -86,6 +87,8 @@ Planned: deeper summarization models that track *why* probabilities shift over t
 | `SUPABASE_SERVICE_ROLE_KEY` | long service key (server‑side only)   |
 | `KALSHI_API_KEY`            | Kalshi personal API token             |
 | `POLYMARKET_API_KEY`        | (optional) higher quota for Gamma API |
+| `POLYMARKET_CLOB_URL`       | (optional) proxy base for CLOB API    |
+| `POLYMARKET_TRADES_URL`     | (optional) proxy base for trades API  |
 
 See **`.env.example`** for a template and add them to **`.env`** for local runs. Store them in **GitHub Secrets** for CI.
 
