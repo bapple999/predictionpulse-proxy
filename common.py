@@ -55,8 +55,15 @@ def insert_to_supabase(table: str, rows: list, conflict_key: str | None = "marke
 
 # ───────────────── Polymarket helpers
 GAMMA_URL = "https://gamma.polymarket.com/markets"
-CLOB_URL = "https://clob.polymarket.com/markets/{}"
-TRADES_URL = "https://clob.polymarket.com/markets/{}/trades"
+# Allow overriding the default CLOB endpoints via environment variables. This
+# makes it possible to point the loader at a custom proxy when direct network
+# access is restricted.
+CLOB_URL = os.environ.get(
+    "POLYMARKET_CLOB_URL", "https://clob.polymarket.com/markets/{}"
+)
+TRADES_URL = os.environ.get(
+    "POLYMARKET_TRADES_URL", "https://clob.polymarket.com/markets/{}/trades"
+)
 
 
 def fetch_gamma():

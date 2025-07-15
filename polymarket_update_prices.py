@@ -1,7 +1,12 @@
 import os, requests
 from datetime import datetime, timedelta
 from dateutil import parser
-from common import insert_to_supabase
+from common import (
+    insert_to_supabase,
+    fetch_clob,
+    last24h_stats,
+    CLOB_URL,
+)
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SERVICE_KEY  = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
@@ -11,27 +16,13 @@ SUPA_HEADERS = {
     "Content-Type": "application/json",
 }
 
-CLOB  = "https://clob.polymarket.com/markets/{}"
-TRADES= "https://clob.polymarket.com/markets/{}/trades"
+TRADES = os.environ.get(
+    "POLYMARKET_TRADES_URL", "https://clob.polymarket.com/markets/{}/trades"
+)
 
 # ───────────────── helpers
-def fetch_clob(mid: str):
-    r = requests.get(CLOB.format(mid), timeout=8)
-    if r.status_code == 404: return None
-    r.raise_for_status(); return r.json()
-
-def trade_stats(mid:str):
-    r = requests.get(TRADES.format(mid), timeout=8)
-    if r.status_code == 404: return (0.0,0,None)
-    r.raise_for_status()
-    cutoff = datetime.utcnow() - timedelta(hours=24)
-    vol_ct=0; vol_d=0.0
-    for t in r.json().get("trades", []):
-        if parser.parse(t["timestamp"]) >= cutoff:
-            size=t["amount"]; price=t["price"]/100
-            vol_ct+=size; vol_d+=size*price
-    vwap = round(vol_d/vol_ct,4) if vol_ct else None
-    return round(vol_d,2), vol_ct, vwap
+# `fetch_clob` and `last24h_stats` are imported from ``common`` so that they
+# respect any environment-based overrides for Polymarket endpoints.
 
 def load_market_ids():
     # include markets with NULL expiration as well
@@ -62,7 +53,7 @@ def main():
             if price is not None:
                 price = price/100
 
-        vol_d, vol_ct, vwap = trade_stats(mid)
+        vol_d, vol_ct, vwap = last24h_stats(mid)
 
         snapshots.append({
             "market_id":mid,
