@@ -73,6 +73,8 @@ def fetch_trade_stats(ticker: str):
             headers=HEADERS_KALSHI,
             timeout=10,
         )
+        if r.status_code == 404:
+            return 0.0, 0, None
         r.raise_for_status()
         trades = r.json().get("trades", [])
         cutoff = datetime.utcnow() - timedelta(hours=24)
