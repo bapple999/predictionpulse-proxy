@@ -46,6 +46,26 @@ def fetch_all_markets(limit=1000):
             break
     return markets
 
+def fetch_known_market_ids(limit: int = 10000) -> set[str]:
+    """Return a set of market IDs already present in Supabase."""
+    url = f"{SUPABASE_URL}/rest/v1/markets?select=market_id&limit={limit}"
+    ids, offset = set(), 0
+    while True:
+        resp = requests.get(
+            f"{url}&offset={offset}",
+            headers=SUPA_HEADERS,
+            timeout=20,
+        )
+        resp.raise_for_status()
+        batch = resp.json()
+        if not batch:
+            break
+        ids.update(m.get("market_id") for m in batch if m.get("market_id"))
+        if len(batch) < limit:
+            break
+        offset += limit
+    return ids
+
 def fetch_trade_stats(ticker: str):
     try:
         r = requests.get(
@@ -94,10 +114,18 @@ def main():
         reverse=True
     )[:200]
 
+    # only insert snapshots for markets already present in the DB to avoid
+    # foreign‑key errors
+    known_ids = fetch_known_market_ids()
+
     snapshots, outcomes = [] , []
 
+    skipped = 0
     for m in top_markets:
         mid = m["ticker"]
+        if mid not in known_ids:
+            skipped += 1
+            continue
         last_price = m.get("last_price")
         yes_bid = m.get("yes_bid")
         no_bid = m.get("no_bid")
@@ -132,6 +160,8 @@ def main():
     print(f"📦 Writing {len(snapshots)} snapshots and {len(outcomes)} outcomes to Supabase…")
     insert_to_supabase("market_snapshots", snapshots, conflict_key=None)
     insert_to_supabase("market_outcomes", outcomes, conflict_key=None)
+    if skipped:
+        print(f"Skipped {skipped} unknown markets")
     print("✅ Done.")
 
 if __name__ == "__main__":
