@@ -35,6 +35,7 @@ The platform aims to:
 # Run once to verify
  python kalshi_fetch.py               # daily metadata load
  python kalshi_update_prices.py       # single price snapshot
+ python kalshi_ws.py                  # live ticker feed via WebSocket
  python market_news_summary.py        # summarize movers w/ news
 ```
 
@@ -49,6 +50,7 @@ The platform aims to:
 ├── common.py                     # shared insert_to_supabase helper
 ├── kalshi_fetch.py               # daily full‑market load
 ├── kalshi_update_prices.py       # 5‑minute snapshots
+├── kalshi_ws.py                 # stream ticker_v2 via WebSocket
 ├── polymarket_fetch.py           # daily full‑market load
 ├── polymarket_update_prices.py   # 5‑minute snapshots
 ├── market_news_summary.py        # summarize big movers
@@ -86,6 +88,7 @@ Planned: deeper summarization models that track *why* probabilities shift over t
 | `SUPABASE_URL`              | e.g. `https://abcde.supabase.co`      |
 | `SUPABASE_SERVICE_ROLE_KEY` | long service key (server‑side only)   |
 | `KALSHI_API_KEY`            | Kalshi personal API token             |
+| `KALSHI_WS_URL`             | (optional) override WebSocket endpoint |
 | `POLYMARKET_API_KEY`        | (optional) higher quota for Gamma API |
 | `POLYMARKET_GAMMA_URL`      | (optional) override for Gamma API     |
 | `POLYMARKET_CLOB_URL`       | (optional) proxy base for CLOB API    |
