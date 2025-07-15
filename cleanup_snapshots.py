@@ -22,8 +22,10 @@ HEADERS = {
 }
 
 def main(cutoff: str) -> None:
-    url = f"{SUPABASE_URL}/rest/v1/market_snapshots?timestamp=lt.{cutoff}"
-    r = requests.delete(url, headers=HEADERS, timeout=30)
+    url = f"{SUPABASE_URL}/rest/v1/market_snapshots"
+    r = requests.delete(url, headers=HEADERS,
+                        params={"timestamp": f"lt.{cutoff}"},
+                        timeout=30)
     if r.status_code not in (200, 204):
         print(f"❌ delete failed {r.status_code}: {r.text[:200]}")
     else:
