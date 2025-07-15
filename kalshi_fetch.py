@@ -2,7 +2,7 @@
 
 import os
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dateutil.parser import parse
 from common import insert_to_supabase
 
@@ -42,11 +42,16 @@ def fetch_trade_stats(tkr: str):
             return 0.0, 0, None
         r.raise_for_status()
         trades = r.json().get("trades", [])
-        cutoff = datetime.utcnow() - timedelta(hours=24)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
 
         dollar_volume, vol_ct = 0.0, 0
         for t in trades:
-            if parse(t["timestamp"]) >= cutoff:
+            ts = parse(t["timestamp"])
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            else:
+                ts = ts.astimezone(timezone.utc)
+            if ts >= cutoff:
                 vol_ct += t["size"]
                 dollar_volume += t["size"] * t["price"]
 
@@ -62,7 +67,7 @@ def main():
     raw = fetch_all_markets()
     print(f"Fetched {len(raw)} Kalshi markets")
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     active = []
     for m in raw:
         if not m.get("ticker"):
@@ -71,6 +76,11 @@ def main():
         status = (m.get("status", "TRADING")).upper()
         exp_raw = m.get("close_time") or m.get("closeTime")
         exp_dt = parse(exp_raw) if exp_raw else None
+        if exp_dt:
+            if exp_dt.tzinfo is None:
+                exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+            else:
+                exp_dt = exp_dt.astimezone(timezone.utc)
         if exp_dt and exp_dt <= now:
             continue
         if status != "TRADING":
@@ -88,7 +98,7 @@ def main():
     # ✅ unified logic: sort by dollar volume descending
     active = sorted(active, key=lambda m: m.get("dollar_volume_24h", 0), reverse=True)
 
-    ts = datetime.utcnow().isoformat()+"Z"
+    ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     rows_m, rows_s, rows_o = [], [], []
 
     for m in active:
@@ -100,7 +110,9 @@ def main():
         vol_total = m.get("volume") or 0
         liquidity = m.get("open_interest") or 0
         exp_dt = m.get("_expiration")
-        expiration = exp_dt.isoformat() if exp_dt else None
+        expiration = (
+            exp_dt.isoformat().replace("+00:00", "Z") if exp_dt else None
+        )
         status = m.get("status") or "TRADING"
         tags = [tkr.split("/")[0]] if m.get("ticker") else ["kalshi"]
         event_name = m.get("ticker") or m.get("event_ticker")
