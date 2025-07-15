@@ -58,7 +58,7 @@ def insert_to_supabase(table: str, rows: list, conflict_key: str | None = "marke
 # it possible to point the loader at a custom proxy when direct network access
 # is restricted.
 GAMMA_URL = os.environ.get(
-    "POLYMARKET_GAMMA_URL", "https://gamma.polymarket.com/markets"
+    "POLYMARKET_GAMMA_URL", "https://gamma-api.polymarket.com/markets"
 )
 CLOB_URL = os.environ.get(
     "POLYMARKET_CLOB_URL", "https://clob.polymarket.com/markets/{}"
