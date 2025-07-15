@@ -14,13 +14,24 @@ SUPA_HEADERS = {
     "Content-Type":  "application/json",
 }
 
+# include the Kalshi API token for authenticated requests
+HEADERS_KALSHI = {
+    "Authorization": f"Bearer {os.environ['KALSHI_API_KEY']}",
+    "Content-Type": "application/json",
+}
+
 MARKETS_URL = "https://api.elections.kalshi.com/trade-api/v2/markets"
 TRADES_ENDPOINT = "https://api.elections.kalshi.com/trade-api/v2/markets/{}/trades"
 
 def fetch_all_markets(limit=1000):
     markets, seen, offset = [], set(), 0
     while True:
-        resp = requests.get(MARKETS_URL, params={"limit": limit, "offset": offset}, timeout=20)
+        resp = requests.get(
+            MARKETS_URL,
+            params={"limit": limit, "offset": offset},
+            headers=HEADERS_KALSHI,
+            timeout=20,
+        )
         resp.raise_for_status()
         batch = resp.json().get("markets", [])
         if not batch:
@@ -37,7 +48,11 @@ def fetch_all_markets(limit=1000):
 
 def fetch_trade_stats(ticker: str):
     try:
-        r = requests.get(TRADES_ENDPOINT.format(ticker), timeout=10)
+        r = requests.get(
+            TRADES_ENDPOINT.format(ticker),
+            headers=HEADERS_KALSHI,
+            timeout=10,
+        )
         r.raise_for_status()
         trades = r.json().get("trades", [])
         cutoff = datetime.utcnow() - timedelta(hours=24)
