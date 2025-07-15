@@ -5,6 +5,7 @@ requests
 python-multipart
 pytz
 python-dateutil
+python-dotenv
 
 feedparser
 openai
