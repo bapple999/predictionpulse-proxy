@@ -1,4 +1,6 @@
 import os
+import time
+import logging
 import requests
 from datetime import datetime, timedelta
 from dateutil import parser
@@ -14,6 +16,8 @@ SUPA_HEADERS = {
     "Content-Type":  "application/json",
 }
 
+logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(message)s")
+
 # include the Kalshi API token for authenticated requests
 HEADERS_KALSHI = {
     "Authorization": f"Bearer {os.environ['KALSHI_API_KEY']}",
@@ -23,17 +27,34 @@ HEADERS_KALSHI = {
 MARKETS_URL = "https://api.elections.kalshi.com/trade-api/v2/markets"
 TRADES_ENDPOINT = "https://api.elections.kalshi.com/trade-api/v2/markets/{}/trades"
 
+# only refresh markets expiring within this window
+UPDATE_WINDOW_DAYS = 7
+
+
+def request_json(url: str, headers=None, params=None, tries: int = 3, backoff: float = 1.5):
+    """GET *url* and return JSON with simple retries."""
+    for i in range(tries):
+        try:
+            r = requests.get(url, headers=headers, params=params, timeout=20)
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            logging.warning("request failed (%s/%s) %s: %s", i + 1, tries, url, e)
+            if i == tries - 1:
+                return None
+            time.sleep(backoff * (2**i))
+
 def fetch_all_markets(limit=1000):
     markets, seen, offset = [], set(), 0
     while True:
-        resp = requests.get(
+        j = request_json(
             MARKETS_URL,
-            params={"limit": limit, "offset": offset},
             headers=HEADERS_KALSHI,
-            timeout=20,
+            params={"limit": limit, "offset": offset},
         )
-        resp.raise_for_status()
-        batch = resp.json().get("markets", [])
+        if j is None:
+            break
+        batch = j.get("markets", [])
         if not batch:
             break
         tickers = [m.get("ticker") for m in batch if m.get("ticker")]
@@ -46,37 +67,27 @@ def fetch_all_markets(limit=1000):
             break
     return markets
 
-def fetch_known_market_ids(limit: int = 10000) -> set[str]:
-    """Return a set of market IDs already present in Supabase."""
-    url = f"{SUPABASE_URL}/rest/v1/markets?select=market_id&limit={limit}"
-    ids, offset = set(), 0
-    while True:
-        resp = requests.get(
-            f"{url}&offset={offset}",
-            headers=SUPA_HEADERS,
-            timeout=20,
-        )
-        resp.raise_for_status()
-        batch = resp.json()
-        if not batch:
-            break
-        ids.update(m.get("market_id") for m in batch if m.get("market_id"))
-        if len(batch) < limit:
-            break
-        offset += limit
-    return ids
+def fetch_active_market_info(days: int = UPDATE_WINDOW_DAYS) -> dict[str, datetime | None]:
+    """Return mapping of market_id to expiration for active markets."""
+    url = f"{SUPABASE_URL}/rest/v1/markets?select=market_id,expiration&source=eq.kalshi"
+    rows = request_json(url, headers=SUPA_HEADERS) or []
+    now = datetime.utcnow()
+    future = now + timedelta(days=days)
+    info: dict[str, datetime | None] = {}
+    for r in rows:
+        mid = r.get("market_id")
+        exp_raw = r.get("expiration")
+        exp_dt = parser.isoparse(exp_raw) if exp_raw else None
+        if exp_dt is None or (now <= exp_dt <= future):
+            info[mid] = exp_dt
+    return info
 
 def fetch_trade_stats(ticker: str):
     try:
-        r = requests.get(
-            TRADES_ENDPOINT.format(ticker),
-            headers=HEADERS_KALSHI,
-            timeout=10,
-        )
-        if r.status_code == 404:
+        j = request_json(TRADES_ENDPOINT.format(ticker), headers=HEADERS_KALSHI)
+        if j is None:
             return 0.0, 0, None
-        r.raise_for_status()
-        trades = r.json().get("trades", [])
+        trades = j.get("trades", [])
         cutoff = datetime.utcnow() - timedelta(hours=24)
 
         total_contracts = 0
@@ -93,15 +104,18 @@ def fetch_trade_stats(ticker: str):
         vwap = total_dollar_volume / total_contracts if total_contracts else None
         return round(total_dollar_volume, 2), total_contracts, round(vwap, 4) if vwap else None
     except Exception as e:
-        print(f"⚠️ Trade fetch failed for Kalshi {ticker}: {e}")
+        logging.warning("trade fetch failed for %s: %s", ticker, e)
         return 0.0, 0, None
 
 def main():
-    ts = datetime.utcnow().isoformat() + "Z"
+    now = datetime.utcnow()
+    ts = now.isoformat() + "Z"
     markets = fetch_all_markets()
 
-    # fetch 24h trade stats for ranking concurrently
-    tickers = [m.get("ticker") for m in markets if m.get("ticker")]
+    active = fetch_active_market_info()
+    logging.info("loaded %s active market ids", len(active))
+
+    tickers = [m.get("ticker") for m in markets if m.get("ticker") in active]
     stats_list, failed = fetch_stats_concurrent(tickers, fetch_trade_stats)
     stats_map = {mid: stats for mid, stats in stats_list}
     for m in markets:
@@ -113,7 +127,7 @@ def main():
         m["dollar_volume_24h"] = dv
         m["vwap_24h"] = vw
     if failed:
-        print("⚠️ Failed trade stats for:", failed)
+        logging.warning("failed trade stats for %s", failed)
 
     # rank by past 24h volume
     top_markets = sorted(
@@ -122,21 +136,41 @@ def main():
         reverse=True
     )[:200]
 
-    # only insert snapshots for markets already present in the DB to avoid
-    # foreign‑key errors
-    known_ids = fetch_known_market_ids()
+    # only insert snapshots for markets already present in the DB
+    known_ids = set(active.keys())
 
     snapshots, outcomes = [] , []
-
     skipped = 0
     for m in top_markets:
-        mid = m["ticker"]
-        if mid not in known_ids:
+        mid = m.get("ticker")
+        if not mid:
+            logging.info("skipping market without ticker")
             skipped += 1
             continue
+        if mid not in known_ids:
+            logging.info("skipping unknown market %s", mid)
+            skipped += 1
+            continue
+
+        exp_raw = m.get("close_time") or m.get("closeTime") or m.get("expiration")
+        exp_dt = parser.parse(exp_raw) if exp_raw else active.get(mid)
+        if exp_dt:
+            if exp_dt <= now:
+                logging.info("skipping %s: expired", mid)
+                skipped += 1
+                continue
+            if exp_dt - now > timedelta(days=UPDATE_WINDOW_DAYS):
+                logging.info("skipping %s: expires beyond window", mid)
+                skipped += 1
+                continue
+
         last_price = m.get("last_price")
         yes_bid = m.get("yes_bid")
         no_bid = m.get("no_bid")
+        if last_price is None and yes_bid is None and no_bid is None:
+            logging.info("skipping %s: no price data", mid)
+            skipped += 1
+            continue
 
         contract_volume = m.get("volume_24h", 0)
         dollar_volume   = m.get("dollar_volume_24h", 0.0)
@@ -165,12 +199,12 @@ def main():
                 "source":       "kalshi",
             })
 
-    print(f"📦 Writing {len(snapshots)} snapshots and {len(outcomes)} outcomes to Supabase…")
+    logging.info("writing %s snapshots and %s outcomes", len(snapshots), len(outcomes))
     insert_to_supabase("market_snapshots", snapshots, conflict_key=None)
     insert_to_supabase("market_outcomes", outcomes, conflict_key=None)
     if skipped:
-        print(f"Skipped {skipped} unknown markets")
-    print("✅ Done.")
+        logging.info("skipped %s markets", skipped)
+    logging.info("done")
 
 if __name__ == "__main__":
     main()
