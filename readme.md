@@ -87,6 +87,7 @@ Planned: deeper summarization models that track *why* probabilities shift over t
 | `SUPABASE_SERVICE_ROLE_KEY` | long service key (server‑side only)   |
 | `KALSHI_API_KEY`            | Kalshi personal API token             |
 | `POLYMARKET_API_KEY`        | (optional) higher quota for Gamma API |
+| `POLYMARKET_GAMMA_URL`      | (optional) override for Gamma API     |
 | `POLYMARKET_CLOB_URL`       | (optional) proxy base for CLOB API    |
 | `POLYMARKET_TRADES_URL`     | (optional) proxy base for trades API  |
 
