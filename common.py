@@ -4,9 +4,15 @@ Shared helpers for every ingestion script.
 import os
 import requests
 import itertools
+from dotenv import load_dotenv
 
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-SERVICE_KEY  = os.environ["SUPABASE_SERVICE_ROLE_KEY"]   # long service key
+load_dotenv()
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SERVICE_KEY  = os.getenv("SUPABASE_SERVICE_ROLE_KEY")   # long service key
+
+if not SUPABASE_URL or not SERVICE_KEY:
+    raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set")
 
 BASE_HEADERS = {
     "apikey":        SERVICE_KEY,
