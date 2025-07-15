@@ -128,7 +128,8 @@ def main():
         kept.append(m)
 
     # ✅ unified logic: sort by dollar volume descending
-    kept = sorted(kept, key=lambda m: m.get("dollar_volume_24h", 0), reverse=True)
+    # some markets may lack a volume stat; treat `None` as zero
+    kept = sorted(kept, key=lambda m: m.get("dollar_volume_24h") or 0, reverse=True)
 
     print(f"Filtered down to {len(kept)} markets (skipped {skipped})")
 
