@@ -4,7 +4,7 @@ import os
 import requests
 from datetime import datetime, timedelta, timezone
 from dateutil.parser import parse
-from common import insert_to_supabase
+from common import insert_to_supabase, fetch_stats_concurrent
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SERVICE_KEY  = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
@@ -85,6 +85,12 @@ def main():
     print(f"Fetched {len(raw)} Kalshi markets")
 
     now = datetime.now(timezone.utc)
+    tickers = [m.get("ticker") for m in raw if m.get("ticker")]
+    stats_list, failed = fetch_stats_concurrent(tickers, fetch_trade_stats)
+    stats_map = {mid: stats for mid, stats in stats_list}
+    if failed:
+        print("⚠️ Failed trade stats for:", failed)
+
     kept = []
     skipped = 0
     for m in raw:
@@ -104,7 +110,7 @@ def main():
                 exp_dt = exp_dt.astimezone(timezone.utc)
         is_active = status == "TRADING" and (not exp_dt or exp_dt > now)
 
-        dv, ct, vw = fetch_trade_stats(ticker)
+        dv, ct, vw = stats_map.get(ticker, (None, 0, None))
         if dv is None:
             # volume unavailable -> skip filtering
             is_high_vol = True

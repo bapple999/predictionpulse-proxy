@@ -119,3 +119,31 @@ def last24h_stats(mid: str):
         return round(vol_d, 2), vol_ct, vwap
     except Exception:
         return 0.0, 0, None
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+def fetch_stats_concurrent(market_ids, fetch_fn):
+    """Fetch trade stats concurrently using *fetch_fn*.
+
+    Args:
+        market_ids: iterable of market identifiers
+        fetch_fn: function taking a market_id and returning stats
+    Returns:
+        (results, failed) where results is a list of (market_id, stats)
+        and failed is a list of market_ids that raised exceptions.
+    """
+    results = []
+    failed = []
+    if not market_ids:
+        return results, failed
+    workers = min(8, len(market_ids))
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futures = {ex.submit(fetch_fn, mid): mid for mid in market_ids}
+        for fut in as_completed(futures):
+            mid = futures[fut]
+            try:
+                stats = fut.result()
+                results.append((mid, stats))
+            except Exception as e:
+                print(f"⚠️ stats fetch failed for {mid}: {e}")
+                failed.append(mid)
+    return results, failed
