@@ -12,7 +12,8 @@ from common import (
 )
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
-SERVICE_KEY  = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+SERVICE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+FETCH_LIMIT = int(os.getenv("FETCH_LIMIT", "100"))
 SUPA_HEADERS = {
     "apikey": SERVICE_KEY,
     "Authorization": f"Bearer {SERVICE_KEY}",
@@ -68,7 +69,7 @@ def main():
 
     snapshots, outcomes = [], []
 
-    for mid, exp_dt in active.items():
+    for mid, exp_dt in list(active.items())[:FETCH_LIMIT]:
         if exp_dt and exp_dt <= now:
             logging.info("skipping %s: expired", mid)
             continue

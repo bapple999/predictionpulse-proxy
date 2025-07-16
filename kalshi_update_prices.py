@@ -9,7 +9,8 @@ from common import insert_to_supabase, fetch_stats_concurrent
 # refresh prices for the most active Kalshi markets (24h volume)
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
-SERVICE_KEY  = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+SERVICE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+FETCH_LIMIT = int(os.getenv("FETCH_LIMIT", "100"))
 SUPA_HEADERS = {
     "apikey":        SERVICE_KEY,
     "Authorization": f"Bearer {SERVICE_KEY}",
@@ -134,7 +135,7 @@ def main():
         [m for m in markets if m.get("ticker")],
         key=lambda m: m.get("volume_24h", 0),
         reverse=True
-    )[:200]
+    )[:FETCH_LIMIT]
 
     # only insert snapshots for markets already present in the DB
     known_ids = set(active.keys())

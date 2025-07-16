@@ -7,7 +7,8 @@ from dateutil.parser import parse
 from common import insert_to_supabase
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
-SERVICE_KEY  = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+SERVICE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+FETCH_LIMIT = int(os.getenv("FETCH_LIMIT", "100"))
 
 HEADERS_KALSHI = {
     "Authorization": f"Bearer {os.environ['KALSHI_API_KEY']}",
@@ -17,23 +18,27 @@ EVENTS_URL   = "https://api.elections.kalshi.com/trade-api/v2/events"
 MARKETS_URL  = "https://api.elections.kalshi.com/trade-api/v2/markets"
 TRADES_URL   = "https://api.elections.kalshi.com/trade-api/v2/markets/{}/trades"
 
-MIN_DOLLAR_VOLUME = 100
+MIN_DOLLAR_VOLUME = 0
 
 # ---------- helpers ----------
 def fetch_events():
     j = requests.get(EVENTS_URL, headers=HEADERS_KALSHI, timeout=15).json()
     return {e["ticker"]: e for e in j.get("events", []) if e.get("ticker")}
 
-def fetch_all_markets(limit=1000):
+def fetch_all_markets(limit=1000, max_pages=None):
     markets, cursor = [], None
+    pages = 0
     while True:
         params = {"limit": limit, **({"cursor": cursor} if cursor else {})}
         j = requests.get(MARKETS_URL, headers=HEADERS_KALSHI,
                          params=params, timeout=20).json()
         batch, cursor = j.get("markets", []), j.get("cursor")
-        if not batch: break
+        if not batch:
+            break
         markets.extend(batch)
-        if not cursor: break
+        pages += 1
+        if not cursor or (max_pages and pages >= max_pages):
+            break
     return markets
 
 def fetch_trade_stats(tkr: str):
@@ -60,7 +65,7 @@ def fetch_trade_stats(tkr: str):
 # ---------- main ----------
 def main():
     events = fetch_events()
-    raw = fetch_all_markets()
+    raw = fetch_all_markets(limit=FETCH_LIMIT, max_pages=1)[:FETCH_LIMIT]
     print(f"Fetched {len(raw)} Kalshi markets")
 
     now = datetime.utcnow()
@@ -72,21 +77,15 @@ def main():
         status = (m.get("status", "TRADING")).upper()
         exp_raw = m.get("close_time") or m.get("closeTime")
         exp_dt = parse(exp_raw) if exp_raw else None
-        if exp_dt and exp_dt <= now:
-            continue
-        if status != "TRADING":
-            continue
 
         dv, ct, vw = fetch_trade_stats(m["ticker"])
-        if dv < MIN_DOLLAR_VOLUME:
-            continue
         m["volume_24h"] = ct
         m["dollar_volume_24h"] = dv
         m["vwap_24h"] = vw
         m["_expiration"] = exp_dt
         active.append(m)
 
-    active = sorted(active, key=lambda m: m.get("dollar_volume_24h", 0), reverse=True)
+    active = sorted(active, key=lambda m: m.get("dollar_volume_24h", 0), reverse=True)[:FETCH_LIMIT]
 
     ts = datetime.utcnow().isoformat()+"Z"
     rows_m, rows_s, rows_o = [], [], []

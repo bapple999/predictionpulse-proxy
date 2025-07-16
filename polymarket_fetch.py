@@ -16,7 +16,8 @@ GAMMA  = "https://gamma-api.polymarket.com/markets"
 CLOB   = "https://clob.polymarket.com/markets/{}"
 TRADES = "https://clob.polymarket.com/markets/{}/trades"
 
-MIN_DOLLAR_VOLUME = 100  # skip tiny or inactive markets
+FETCH_LIMIT = int(os.getenv("FETCH_LIMIT", "100"))
+MIN_DOLLAR_VOLUME = 0
 
 
 def _first(obj: dict, keys: list[str]):
@@ -27,7 +28,7 @@ def _first(obj: dict, keys: list[str]):
     return None
 
 # ───────────────── fetch helpers
-def fetch_gamma(limit: int = 500, max_pages: int = 30):
+def fetch_gamma(limit: int = FETCH_LIMIT, max_pages: int = 1):
     """Return full Polymarket market list via pagination."""
     out, offset = [], 0
     for _ in range(max_pages):
@@ -72,21 +73,16 @@ def last24h_stats(mid: str):
 
 # ───────────────────────── main
 def main():
-    gamma_all = fetch_gamma()
+    gamma_all = fetch_gamma(limit=FETCH_LIMIT, max_pages=1)[:FETCH_LIMIT]
 
-    closed = {"RESOLVED", "FINALIZED", "SETTLED", "CANCELLED"}
     now = datetime.utcnow()
 
     live = []
     for g in gamma_all:
         status = (g.get("status") or g.get("state") or "TRADING").upper()
-        if status in closed:
-            continue
 
         exp_raw = _first(g, ["end_date_iso", "endDate", "endTime", "end_time"])
         exp_dt = parse(exp_raw) if exp_raw else None
-        if exp_dt and exp_dt <= now:
-            continue
 
         price = _first(g, ["lastTradePrice", "lastPrice", "price"])
         if price is not None and price > 1:
@@ -107,8 +103,7 @@ def main():
             except (TypeError, ValueError):
                 dollar_volume = 0.0
 
-        if dollar_volume < MIN_DOLLAR_VOLUME:
-            continue
+
 
         tags = []
         if g.get("category"):
@@ -126,7 +121,7 @@ def main():
         })
         live.append(g)
 
-    top = sorted(live, key=lambda x: x.get("_dollar_volume", 0), reverse=True)
+    top = sorted(live, key=lambda x: x.get("_dollar_volume", 0), reverse=True)[:FETCH_LIMIT]
     logging.info("selected %s live markets", len(top))
 
     ts = datetime.utcnow().isoformat() + "Z"
