@@ -2,7 +2,7 @@ import os
 import time
 import logging
 import requests
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from dateutil import parser
 from common import (
     insert_to_supabase,
@@ -22,12 +22,7 @@ SUPA_HEADERS = {
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(message)s")
 
-# only refresh markets expiring within this window
-UPDATE_WINDOW_DAYS = 7
 
-TRADES = os.environ.get(
-    "POLYMARKET_TRADES_URL", "https://clob.polymarket.com/markets/{}/trades"
-)
 
 
 def request_json(url: str, headers=None, params=None, tries: int = 3, backoff: float = 1.5):
@@ -46,18 +41,21 @@ def request_json(url: str, headers=None, params=None, tries: int = 3, backoff: f
 # `fetch_clob` and `last24h_stats` are imported from ``common`` so that they
 # respect any environment-based overrides for Polymarket endpoints.
 
-def load_active_market_info(days: int = UPDATE_WINDOW_DAYS) -> dict[str, datetime | None]:
-    url = f"{SUPABASE_URL}/rest/v1/markets?select=market_id,expiration&source=eq.polymarket"
+def load_active_market_info() -> dict[str, tuple[str | None, datetime | None]]:
+    """Return mapping of market_id to (slug, expiration) for known markets."""
+    url = (
+        f"{SUPABASE_URL}/rest/v1/markets"
+        f"?select=market_id,event_ticker,expiration&source=eq.polymarket"
+    )
     rows = request_json(url, headers=SUPA_HEADERS) or []
-    now = datetime.now(timezone.utc)
-    future = now + timedelta(days=days)
-    info: dict[str, datetime | None] = {}
+    info: dict[str, tuple[str | None, datetime | None]] = {}
     for r in rows:
         mid = r.get("market_id")
+        slug = r.get("event_ticker")
         exp_raw = r.get("expiration")
         exp_dt = parser.isoparse(exp_raw) if exp_raw else None
-        if exp_dt is None or (now <= exp_dt <= future):
-            info[mid] = exp_dt
+        if mid:
+            info[mid] = (slug, exp_dt)
     return info
 
 # ───────────────── main
@@ -69,15 +67,8 @@ def main():
 
     snapshots, outcomes = [], []
 
-    for mid, exp_dt in list(active.items())[:FETCH_LIMIT]:
-        if exp_dt and exp_dt <= now:
-            logging.info("skipping %s: expired", mid)
-            continue
-        if exp_dt and exp_dt - now > timedelta(days=UPDATE_WINDOW_DAYS):
-            logging.info("skipping %s: expires beyond window", mid)
-            continue
-
-        clob = fetch_clob(mid)
+    for mid, (slug, _) in list(active.items())[:FETCH_LIMIT]:
+        clob = fetch_clob(mid, slug)
         if not clob:
             logging.info("clob fetch failed for %s", mid)
             continue
