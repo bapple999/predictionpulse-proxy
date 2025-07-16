@@ -130,11 +130,11 @@ def main():
     if failed:
         logging.warning("failed trade stats for %s", failed)
 
-    # rank by past 24h volume
+    # rank by past 24h volume but only include known/active markets
     top_markets = sorted(
-        [m for m in markets if m.get("ticker")],
+        [m for m in markets if m.get("ticker") in active],
         key=lambda m: m.get("volume_24h", 0),
-        reverse=True
+        reverse=True,
     )[:FETCH_LIMIT]
 
     # only insert snapshots for markets already present in the DB
