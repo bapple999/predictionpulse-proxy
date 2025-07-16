@@ -28,6 +28,8 @@ function App() {
   const [sortKey, setSortKey] = useState('volume24h')
   const [sortDir, setSortDir] = useState('desc')
   const [filter, setFilter] = useState('all')
+  const [category, setCategory] = useState('all')
+  const categories = ['economics', 'politics', 'sports']
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -124,6 +126,9 @@ function App() {
 
   const displayed = rows
     .filter(r => filter === 'all' || r.source === filter)
+    .filter(r =>
+      category === 'all' || (r.tags || []).map(t => t.toLowerCase()).includes(category)
+    )
     .sort((a, b) => {
       const va = a[sortKey] ?? -Infinity
       const vb = b[sortKey] ?? -Infinity
@@ -134,9 +139,38 @@ function App() {
     <div className="App">
       <h1>Prediction Pulse: Top Markets</h1>
       <div className="filters">
-        <button onClick={() => setFilter('all')}>All</button>
-        <button onClick={() => setFilter('kalshi')}>Kalshi</button>
-        <button onClick={() => setFilter('polymarket')}>Polymarket</button>
+        <button
+          onClick={() => setFilter('all')}
+          className={filter === 'all' ? 'active' : ''}
+        >
+          All
+        </button>
+        <button
+          onClick={() => setFilter('kalshi')}
+          className={filter === 'kalshi' ? 'active' : ''}
+        >
+          Kalshi
+        </button>
+        <button
+          onClick={() => setFilter('polymarket')}
+          className={filter === 'polymarket' ? 'active' : ''}
+        >
+          Polymarket
+        </button>
+      </div>
+      <div className="categories">
+        <button onClick={() => setCategory('all')} className={category === 'all' ? 'active' : ''}>
+          All
+        </button>
+        {categories.map(c => (
+          <button
+            key={c}
+            onClick={() => setCategory(c)}
+            className={category === c ? 'active' : ''}
+          >
+            {c.charAt(0).toUpperCase() + c.slice(1)}
+          </button>
+        ))}
       </div>
       {error && <p className="error">{error}</p>}
       {!rows.length && !error && <p style={{ color: 'gray' }}>Loading...</p>}
@@ -144,12 +178,29 @@ function App() {
         <table>
           <thead>
             <tr>
-              <th onClick={() => toggleSort('market_name')} data-sort="market_name">Market</th>
+              <th
+                onClick={() => toggleSort('market_name')}
+                data-sort="market_name"
+              >
+                Market{' '}
+                {sortKey === 'market_name' ? (sortDir === 'desc' ? '↓' : '↑') : ''}
+              </th>
               <th>Top Outcome</th>
-              <th onClick={() => toggleSort('price')} data-sort="price">Price</th>
-              <th onClick={() => toggleSort('changePct')} data-sort="changePct">24h Change</th>
-              <th onClick={() => toggleSort('volume24h')} data-sort="volume24h">24h Volume</th>
-              <th onClick={() => toggleSort('expiration')} data-sort="expiration">End Date</th>
+              <th onClick={() => toggleSort('price')} data-sort="price">
+                Price {sortKey === 'price' ? (sortDir === 'desc' ? '↓' : '↑') : ''}
+              </th>
+              <th onClick={() => toggleSort('changePct')} data-sort="changePct">
+                24h Change{' '}
+                {sortKey === 'changePct' ? (sortDir === 'desc' ? '↓' : '↑') : ''}
+              </th>
+              <th onClick={() => toggleSort('volume24h')} data-sort="volume24h">
+                24h Volume{' '}
+                {sortKey === 'volume24h' ? (sortDir === 'desc' ? '↓' : '↑') : ''}
+              </th>
+              <th onClick={() => toggleSort('expiration')} data-sort="expiration">
+                End Date{' '}
+                {sortKey === 'expiration' ? (sortDir === 'desc' ? '↓' : '↑') : ''}
+              </th>
               <th>Tags</th>
             </tr>
           </thead>
