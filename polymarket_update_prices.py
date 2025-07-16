@@ -2,7 +2,7 @@ import os
 import time
 import logging
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dateutil import parser
 from common import (
     insert_to_supabase,
@@ -49,7 +49,7 @@ def request_json(url: str, headers=None, params=None, tries: int = 3, backoff: f
 def load_active_market_info(days: int = UPDATE_WINDOW_DAYS) -> dict[str, datetime | None]:
     url = f"{SUPABASE_URL}/rest/v1/markets?select=market_id,expiration&source=eq.polymarket"
     rows = request_json(url, headers=SUPA_HEADERS) or []
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     future = now + timedelta(days=days)
     info: dict[str, datetime | None] = {}
     for r in rows:
@@ -62,8 +62,8 @@ def load_active_market_info(days: int = UPDATE_WINDOW_DAYS) -> dict[str, datetim
 
 # ───────────────── main
 def main():
-    now = datetime.utcnow()
-    ts = now.isoformat() + "Z"
+    now = datetime.now(timezone.utc)
+    ts = now.isoformat().replace("+00:00", "Z")
     active = load_active_market_info()
     logging.info("refreshing %s polymarket prices", len(active))
 
