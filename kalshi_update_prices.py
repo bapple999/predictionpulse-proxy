@@ -2,7 +2,7 @@ import os
 import time
 import logging
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dateutil import parser
 from common import insert_to_supabase, fetch_stats_concurrent
 
@@ -72,7 +72,7 @@ def fetch_active_market_info(days: int = UPDATE_WINDOW_DAYS) -> dict[str, dateti
     """Return mapping of market_id to expiration for active markets."""
     url = f"{SUPABASE_URL}/rest/v1/markets?select=market_id,expiration&source=eq.kalshi"
     rows = request_json(url, headers=SUPA_HEADERS) or []
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     future = now + timedelta(days=days)
     info: dict[str, datetime | None] = {}
     for r in rows:
@@ -89,7 +89,7 @@ def fetch_trade_stats(ticker: str):
         if j is None:
             return 0.0, 0, None
         trades = j.get("trades", [])
-        cutoff = datetime.utcnow() - timedelta(hours=24)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
 
         total_contracts = 0
         total_dollar_volume = 0.0
@@ -109,8 +109,8 @@ def fetch_trade_stats(ticker: str):
         return 0.0, 0, None
 
 def main():
-    now = datetime.utcnow()
-    ts = now.isoformat() + "Z"
+    now = datetime.now(timezone.utc)
+    ts = now.isoformat().replace("+00:00", "Z")
     markets = fetch_all_markets()
 
     active = fetch_active_market_info()
