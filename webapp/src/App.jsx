@@ -27,9 +27,6 @@ function App() {
   const [rows, setRows] = useState([])
   const [sortKey, setSortKey] = useState('volume24h')
   const [sortDir, setSortDir] = useState('desc')
-  const [filter, setFilter] = useState('all')
-  const [category, setCategory] = useState('all')
-  const categories = ['economics', 'politics', 'sports']
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -53,7 +50,7 @@ function App() {
       const marketsRaw = await api(
         `/rest/v1/latest_snapshots` +
         `?select=market_id,source,market_name,expiration,tags,volume` +
-        `&order=volume.desc&limit=500`
+        `&order=volume.desc&limit=100`
       )
       const markets = marketsRaw.filter(m => !m.expiration || m.expiration > now)
       console.log('Market data from Supabase:', markets.slice(0, 3))
@@ -124,12 +121,7 @@ function App() {
     }
   }
 
-  const displayed = rows
-    .filter(r => filter === 'all' || r.source === filter)
-    .filter(r =>
-      category === 'all' || (r.tags || []).map(t => t.toLowerCase()).includes(category)
-    )
-    .sort((a, b) => {
+  const displayed = [...rows].sort((a, b) => {
       const va = a[sortKey] ?? -Infinity
       const vb = b[sortKey] ?? -Infinity
       return sortDir === 'desc' ? vb - va : va - vb
@@ -138,40 +130,7 @@ function App() {
   return (
     <div className="App">
       <h1>Prediction Pulse: Top Markets</h1>
-      <div className="filters">
-        <button
-          onClick={() => setFilter('all')}
-          className={filter === 'all' ? 'active' : ''}
-        >
-          All
-        </button>
-        <button
-          onClick={() => setFilter('kalshi')}
-          className={filter === 'kalshi' ? 'active' : ''}
-        >
-          Kalshi
-        </button>
-        <button
-          onClick={() => setFilter('polymarket')}
-          className={filter === 'polymarket' ? 'active' : ''}
-        >
-          Polymarket
-        </button>
-      </div>
-      <div className="categories">
-        <button onClick={() => setCategory('all')} className={category === 'all' ? 'active' : ''}>
-          All
-        </button>
-        {categories.map(c => (
-          <button
-            key={c}
-            onClick={() => setCategory(c)}
-            className={category === c ? 'active' : ''}
-          >
-            {c.charAt(0).toUpperCase() + c.slice(1)}
-          </button>
-        ))}
-      </div>
+      {/* removed filters */}
       {error && <p className="error">{error}</p>}
       {!rows.length && !error && <p style={{ color: 'gray' }}>Loading...</p>}
       {rows.length > 0 && (
