@@ -91,6 +91,7 @@ Planned: deeper summarization models that track *why* probabilities shift over t
 | `KALSHI_WS_URL`             | (optional) override WebSocket endpoint |
 | `POLYMARKET_API_KEY`        | (optional) higher quota for Gamma API |
 | `POLYMARKET_GAMMA_URL`      | (optional) override for Gamma API     |
+| `POLYMARKET_EVENTS_URL`     | (optional) override for events API    |
 | `POLYMARKET_CLOB_URL`       | (optional) proxy base for CLOB API    |
 | `POLYMARKET_TRADES_URL`     | (optional) proxy base for trades API  |
 
