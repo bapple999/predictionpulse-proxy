@@ -66,6 +66,9 @@ CLOB_URL = os.environ.get(
 TRADES_URL = os.environ.get(
     "POLYMARKET_TRADES_URL", "https://clob.polymarket.com/markets/{}/trades"
 )
+EVENTS_URL = os.environ.get(
+    "POLYMARKET_EVENTS_URL", "https://gamma-api.polymarket.com/events"
+)
 
 
 def fetch_gamma():
@@ -80,6 +83,30 @@ def fetch_gamma():
     if isinstance(j, dict) and "markets" in j:
         return j["markets"]
     return j
+
+
+def fetch_events(limit: int = 250, max_pages: int = 10, **filters):
+    """Return a list of events from Polymarket's Gamma API."""
+    headers = {}
+    api_key = os.environ.get("POLYMARKET_API_KEY")
+    if api_key:
+        headers["X-API-Key"] = api_key
+    events = []
+    offset = 0
+    for _ in range(max_pages):
+        params = {"limit": limit, "offset": offset}
+        params.update(filters)
+        r = requests.get(EVENTS_URL, headers=headers, params=params, timeout=15)
+        r.raise_for_status()
+        j = r.json()
+        batch = j.get("events") if isinstance(j, dict) else j
+        if not batch:
+            break
+        events.extend(batch)
+        if len(batch) < limit:
+            break
+        offset += limit
+    return events
 
 
 def fetch_clob(mid: str, slug: str | None = None):

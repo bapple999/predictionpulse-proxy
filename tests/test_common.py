@@ -31,3 +31,24 @@ def test_fetch_stats_concurrent_failure():
     stats, failed = common.fetch_stats_concurrent([7], fn)
     assert stats == []
     assert failed == [7]
+
+
+def test_fetch_events(monkeypatch):
+    calls = []
+
+    def fake_get(url, headers=None, params=None, timeout=15):
+        calls.append((url, params))
+
+        class FakeResp:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"events": [{"id": 1}, {"id": 2}]}
+
+        return FakeResp()
+
+    monkeypatch.setattr(common.requests, "get", fake_get)
+    events = common.fetch_events(limit=2, max_pages=1)
+    assert events == [{"id": 1}, {"id": 2}]
+    assert calls[0][0] == common.EVENTS_URL
