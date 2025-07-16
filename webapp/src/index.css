@@ -92,13 +92,3 @@ tr:hover {
   background-color: #f5faff;
 }
 
-.filters,
-.categories {
-  margin-bottom: 1rem;
-}
-
-.filters button.active,
-.categories button.active {
-  background-color: #646cff;
-  color: #fff;
-}
