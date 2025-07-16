@@ -28,8 +28,6 @@ HEADERS_KALSHI = {
 MARKETS_URL = "https://api.elections.kalshi.com/trade-api/v2/markets"
 TRADES_ENDPOINT = "https://api.elections.kalshi.com/trade-api/v2/markets/{}/trades"
 
-# only refresh markets expiring within this window
-UPDATE_WINDOW_DAYS = 7
 
 
 def request_json(url: str, headers=None, params=None, tries: int = 3, backoff: float = 1.5):
@@ -68,18 +66,16 @@ def fetch_all_markets(limit=1000):
             break
     return markets
 
-def fetch_active_market_info(days: int = UPDATE_WINDOW_DAYS) -> dict[str, datetime | None]:
-    """Return mapping of market_id to expiration for active markets."""
+def fetch_active_market_info() -> dict[str, datetime | None]:
+    """Return mapping of all market ids to expiration."""
     url = f"{SUPABASE_URL}/rest/v1/markets?select=market_id,expiration&source=eq.kalshi"
     rows = request_json(url, headers=SUPA_HEADERS) or []
-    now = datetime.now(timezone.utc)
-    future = now + timedelta(days=days)
     info: dict[str, datetime | None] = {}
     for r in rows:
         mid = r.get("market_id")
         exp_raw = r.get("expiration")
         exp_dt = parser.isoparse(exp_raw) if exp_raw else None
-        if exp_dt is None or (now <= exp_dt <= future):
+        if mid:
             info[mid] = exp_dt
     return info
 
@@ -155,15 +151,10 @@ def main():
 
         exp_raw = m.get("close_time") or m.get("closeTime") or m.get("expiration")
         exp_dt = parser.parse(exp_raw) if exp_raw else active.get(mid)
-        if exp_dt:
-            if exp_dt <= now:
-                logging.info("skipping %s: expired", mid)
-                skipped += 1
-                continue
-            if exp_dt - now > timedelta(days=UPDATE_WINDOW_DAYS):
-                logging.info("skipping %s: expires beyond window", mid)
-                skipped += 1
-                continue
+        if exp_dt and exp_dt <= now:
+            logging.info("skipping %s: expired", mid)
+            skipped += 1
+            continue
 
         last_price = m.get("last_price")
         yes_bid = m.get("yes_bid")
