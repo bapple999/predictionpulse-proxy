@@ -7,7 +7,7 @@ import logging
 from datetime import datetime, timedelta
 from dateutil import parser
 from dateutil.parser import parse
-from common import insert_to_supabase
+from common import insert_to_supabase, fetch_price_24h_ago
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(message)s")
@@ -125,7 +125,7 @@ def main():
     logging.info("selected %s live markets", len(top))
 
     ts = datetime.utcnow().isoformat() + "Z"
-    rows_m, rows_s, rows_o = [], [], []
+    rows_e, rows_m, rows_s, rows_p, rows_o = [], [], [], [], []
 
     for g in top:
         mid  = g.get("id")
@@ -154,21 +154,12 @@ def main():
 
         volume = g.get("_volume24h", 0)
         dollar_volume = g.get("_dollar_volume", 0)
-        vwap = None
 
-        print(f"Inserting market {mid} with expiration {exp}, status {status}, price {price}")
-
-        # ── metadata
-        rows_m.append({
-            "market_id": mid,
-            "market_name": title,
-            "market_description": g.get("description") or "",
-            "event_name": title,
-            "event_ticker": slug or mid,
-            "expiration": exp,
+        rows_e.append({
+            "event_id": mid,
+            "title": title,
             "tags": tags,
             "source": "polymarket",
-            "status": status,
         })
 
         rows_s.append({
@@ -178,7 +169,7 @@ def main():
             "no_bid": None,
             "volume": int(volume),
             "dollar_volume": dollar_volume,
-            "vwap": vwap,
+            "vwap": None,
             "liquidity": float(g.get("liquidity") or 0),
             "expiration": exp,
             "timestamp": ts,
@@ -191,10 +182,41 @@ def main():
             p = t.get("price", t.get("probability"))
             if p is None:
                 continue
+            prob = p / 100 if p > 1 else p
+            market_id = f"{mid}:{t['name']}"
+            past = fetch_price_24h_ago(market_id)
+            change = None
+            pct = None
+            if past is not None:
+                change = round(prob - past, 4)
+                pct = round(change / past * 100, 2) if past else None
+
+            rows_m.append({
+                "market_id": market_id,
+                "event_id": mid,
+                "outcome_name": t["name"],
+                "last_price": prob,
+                "average_price": prob,
+                "volume": volume,
+                "dollar_volume": round(volume * prob, 2) if volume else None,
+                "change_24h": change,
+                "percent_change_24h": pct,
+                "source": "polymarket",
+            })
+
+            rows_p.append({
+                "market_id": market_id,
+                "price": prob,
+                "change_24h": change,
+                "percent_change_24h": pct,
+                "timestamp": ts,
+                "source": "polymarket",
+            })
+
             rows_o.append({
                 "market_id": mid,
                 "outcome_name": t["name"],
-                "price": p / 100,
+                "price": prob,
                 "volume": t.get("volume"),
                 "timestamp": ts,
                 "source": "polymarket",
@@ -202,33 +224,62 @@ def main():
             added += 1
 
         if added == 0:
-            rows_o.extend([
-                {
+            yes_price = price
+            no_price = None if price is None else round(1 - price, 4)
+
+            for name, prob in (('Yes', yes_price), ('No', no_price)):
+                mkt_id = f"{mid}:{name}"
+                past = fetch_price_24h_ago(mkt_id)
+                change = pct = None
+                if prob is not None and past is not None:
+                    change = round(prob - past, 4)
+                    pct = round(change / past * 100, 2) if past else None
+
+                rows_m.append({
+                    "market_id": mkt_id,
+                    "event_id": mid,
+                    "outcome_name": name,
+                    "last_price": prob,
+                    "average_price": prob,
+                    "volume": volume,
+                    "dollar_volume": round(volume * prob, 2) if prob is not None else None,
+                    "change_24h": change,
+                    "percent_change_24h": pct,
+                    "source": "polymarket",
+                })
+
+                rows_p.append({
+                    "market_id": mkt_id,
+                    "price": prob,
+                    "change_24h": change,
+                    "percent_change_24h": pct,
+                    "timestamp": ts,
+                    "source": "polymarket",
+                })
+
+                rows_o.append({
                     "market_id": mid,
-                    "outcome_name": "Yes",
-                    "price": price,
+                    "outcome_name": name,
+                    "price": prob,
                     "volume": None,
                     "timestamp": ts,
                     "source": "polymarket",
-                },
-                {
-                    "market_id": mid,
-                    "outcome_name": "No",
-                    "price": None if price is None else round(1 - price, 4),
-                    "volume": None,
-                    "timestamp": ts,
-                    "source": "polymarket",
-                },
-            ])
+                })
 
     # ── insert in FK-safe order
+    insert_to_supabase("events", rows_e)
     insert_to_supabase("markets", rows_m)
     insert_to_supabase("market_snapshots", rows_s, conflict_key=None)
+    insert_to_supabase("market_prices", rows_p, conflict_key=None)
     insert_to_supabase("market_outcomes", rows_o, conflict_key=None)
 
-    logging.info("Inserted %s markets, %s snapshots, %s outcomes",
-                 len(rows_m), len(rows_s), len(rows_o))
-    print(f"Inserted {len(rows_m)} markets and {len(rows_o)} outcomes")
+    logging.info(
+        "Inserted %s events, %s markets, %s snapshots, %s prices, %s outcomes",
+        len(rows_e), len(rows_m), len(rows_s), len(rows_p), len(rows_o),
+    )
+    print(
+        f"Inserted {len(rows_e)} events, {len(rows_m)} markets and {len(rows_o)} outcomes"
+    )
 
     # diagnostics: fetch sample rows
     diag_url = f"{os.environ['SUPABASE_URL']}/rest/v1/latest_snapshots?select=market_id,source,price&order=timestamp.desc&limit=3"

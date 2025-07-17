@@ -4,6 +4,7 @@ Shared helpers for every ingestion script.
 import os
 import requests
 import itertools
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -174,3 +175,23 @@ def fetch_stats_concurrent(market_ids, fetch_fn):
                 print(f"⚠️ stats fetch failed for {mid}: {e}")
                 failed.append(mid)
     return results, failed
+
+
+def fetch_price_24h_ago(market_id: str) -> float | None:
+    """Return the most recent price from 24 hours ago for *market_id*."""
+    since = (datetime.utcnow() - timedelta(hours=24)).isoformat() + "Z"
+    url = f"{SUPABASE_URL}/rest/v1/market_snapshots"
+    params = {
+        "select": "price",
+        "market_id": f"eq.{market_id}",
+        "timestamp": f"lt.{since}",
+        "order": "timestamp.desc",
+        "limit": 1,
+    }
+    try:
+        r = requests.get(url, headers=BASE_HEADERS, params=params, timeout=10)
+        r.raise_for_status()
+        rows = r.json()
+        return rows[0]["price"] if rows else None
+    except Exception:
+        return None
