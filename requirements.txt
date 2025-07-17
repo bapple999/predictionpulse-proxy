@@ -9,3 +9,4 @@ python-dotenv
 
 feedparser
 openai
+supabase>=1.0
