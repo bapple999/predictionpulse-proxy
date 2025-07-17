@@ -1,172 +1,124 @@
-# ✅ kalshi_fetch.py – fetch all Kalshi markets using pagination
+"""Load events and candidate markets from Kalshi and store them."""
 
 import os
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime
 from dateutil.parser import parse
 from common import insert_to_supabase
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SERVICE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
-FETCH_LIMIT = int(os.getenv("FETCH_LIMIT", "100"))
 
 HEADERS_KALSHI = {
     "Authorization": f"Bearer {os.environ['KALSHI_API_KEY']}",
-    "Content-Type":  "application/json",
+    "Content-Type": "application/json",
 }
-EVENTS_URL   = "https://api.elections.kalshi.com/trade-api/v2/events"
-MARKETS_URL  = "https://api.elections.kalshi.com/trade-api/v2/markets"
-TRADES_URL   = "https://api.elections.kalshi.com/trade-api/v2/markets/{}/trades"
 
-MIN_DOLLAR_VOLUME = 0
+EVENTS_URL = "https://api.elections.kalshi.com/trade-api/v2/events"
+MARKETS_URL = "https://api.elections.kalshi.com/trade-api/v2/markets"
 
-# ---------- helpers ----------
-def fetch_events():
-    j = requests.get(EVENTS_URL, headers=HEADERS_KALSHI, timeout=15).json()
-    return {e["ticker"]: e for e in j.get("events", []) if e.get("ticker")}
 
-def fetch_all_markets(limit=1000, max_pages=None):
-    markets, cursor = [], None
-    pages = 0
-    while True:
-        params = {"limit": limit, **({"cursor": cursor} if cursor else {})}
-        j = requests.get(MARKETS_URL, headers=HEADERS_KALSHI,
-                         params=params, timeout=20).json()
-        batch, cursor = j.get("markets", []), j.get("cursor")
-        if not batch:
-            break
-        markets.extend(batch)
-        pages += 1
-        if not cursor or (max_pages and pages >= max_pages):
-            break
-    return markets
+def fetch_events() -> list[dict]:
+    """Return a list of election events."""
+    r = requests.get(EVENTS_URL, headers=HEADERS_KALSHI, timeout=15)
+    r.raise_for_status()
+    return r.json().get("events", [])
 
-def fetch_trade_stats(tkr: str):
-    try:
-        r = requests.get(TRADES_URL.format(tkr), headers=HEADERS_KALSHI, timeout=10)
-        if r.status_code == 404:             # no trades yet
-            return 0.0, 0, None
-        r.raise_for_status()
-        trades = r.json().get("trades", [])
-        cutoff = datetime.utcnow() - timedelta(hours=24)
 
-        dollar_volume, vol_ct = 0.0, 0
-        for t in trades:
-            if parse(t["timestamp"]) >= cutoff:
-                vol_ct += t["size"]
-                dollar_volume += t["size"] * t["price"]
+def fetch_markets(event_ticker: str) -> list[dict]:
+    """Return markets associated with *event_ticker*."""
+    r = requests.get(
+        MARKETS_URL,
+        headers=HEADERS_KALSHI,
+        params={"event_ticker": event_ticker},
+        timeout=15,
+    )
+    r.raise_for_status()
+    return r.json().get("markets", [])
 
-        vwap = dollar_volume / vol_ct if vol_ct else None
-        return round(dollar_volume, 2), vol_ct, round(vwap, 4) if vwap else None
-    except Exception as e:
-        print(f"⚠️ Trade fetch failed for {tkr}: {e}")
-        return 0.0, 0, None
 
-# ---------- main ----------
-def main():
+def main() -> None:
     events = fetch_events()
-    raw = fetch_all_markets(limit=FETCH_LIMIT, max_pages=1)[:FETCH_LIMIT]
-    print(f"Fetched {len(raw)} Kalshi markets")
+    ts = datetime.utcnow().isoformat() + "Z"
 
-    now = datetime.utcnow()
-    active = []
-    for m in raw:
-        if not m.get("ticker"):
+    rows_m: list[dict] = []
+    rows_s: list[dict] = []
+    rows_o: list[dict] = []
+
+    for event in events:
+        event_ticker = event.get("ticker")
+        title = event.get("title") or event_ticker
+        if not event_ticker:
             continue
+        markets = fetch_markets(event_ticker)
 
-        status = (m.get("status", "TRADING")).upper()
-        exp_raw = m.get("close_time") or m.get("closeTime")
-        exp_dt = parse(exp_raw) if exp_raw else None
+        for m in markets:
+            ticker = m.get("ticker")
+            if not ticker:
+                continue
 
-        dv, ct, vw = fetch_trade_stats(m["ticker"])
-        m["volume_24h"] = ct
-        m["dollar_volume_24h"] = dv
-        m["vwap_24h"] = vw
-        m["_expiration"] = exp_dt
-        active.append(m)
+            candidate = ticker.split("-")[-1]
+            price = m.get("last_price")
+            expiration_raw = m.get("close_time") or m.get("closeTime")
+            expiration = parse(expiration_raw).isoformat() if expiration_raw else None
 
-    active = sorted(active, key=lambda m: m.get("dollar_volume_24h", 0), reverse=True)[:FETCH_LIMIT]
+            rows_m.append(
+                {
+                    "market_id": ticker,
+                    "market_name": candidate,
+                    "market_description": title,
+                    "event_name": title,
+                    "event_ticker": event_ticker,
+                    "expiration": expiration,
+                    "tags": ["kalshi"],
+                    "source": "kalshi",
+                    "status": m.get("status") or "TRADING",
+                }
+            )
 
-    ts = datetime.utcnow().isoformat()+"Z"
-    rows_m, rows_s, rows_o = [], [], []
+            rows_s.append(
+                {
+                    "market_id": ticker,
+                    "price": round(price, 4) if price is not None else None,
+                    "yes_bid": m.get("yes_bid"),
+                    "no_bid": m.get("no_bid"),
+                    "volume": m.get("volume"),
+                    "dollar_volume": None,
+                    "vwap": None,
+                    "liquidity": m.get("open_interest"),
+                    "expiration": expiration,
+                    "timestamp": ts,
+                    "source": "kalshi",
+                }
+            )
 
-    for m in active:
-        tkr = m["ticker"]
-        event    = events.get(m.get("event_ticker")) or {}
-        last_px  = m.get("last_price")
-        yes_bid  = m.get("yes_bid")
-        no_bid   = m.get("no_bid")
-        vol_total = m.get("volume") or 0
-        liquidity = m.get("open_interest") or 0
-        exp_dt = m.get("_expiration")
-        expiration = exp_dt.isoformat() if exp_dt else None
-        status = m.get("status") or "TRADING"
-        tags = [tkr.split("/")[0]] if m.get("ticker") else ["kalshi"]
-        event_name = m.get("ticker") or m.get("event_ticker")
+            rows_o.append(
+                {
+                    "market_id": ticker,
+                    "outcome_name": candidate,
+                    "price": price,
+                    "volume": None,
+                    "timestamp": ts,
+                    "source": "kalshi",
+                }
+            )
 
-        confirmed_ct = m.get("volume_24h", 0)
-        dollar_volume = m.get("dollar_volume_24h", 0.0)
-        vwap = m.get("vwap_24h")
-        if dollar_volume == 0 and last_px is not None:
-            dollar_volume = round(last_px * confirmed_ct, 2)
-
-        print(f"Inserting market {tkr} with expiration {expiration}, status {status}, price {last_px}")
-
-        # ---------- markets ----------
-        rows_m.append({
-            "market_id":          tkr,
-            "market_name":        m.get("title") or m.get("description") or tkr,
-            "market_description": m.get("description") or "",
-            "event_name":         event_name,
-            "event_ticker":       m.get("event_ticker") or "",
-            "expiration":         expiration,
-            "tags":               tags,
-            "source":             "kalshi",
-            "status":             status,
-        })
-
-        # ---------- snapshot ----------
-        rows_s.append({
-            "market_id":     tkr,
-            "price":         round(last_px,4) if last_px is not None else None,
-            "yes_bid":       yes_bid,
-            "no_bid":        no_bid,
-            "volume":        confirmed_ct or vol_total,
-            "dollar_volume": dollar_volume,
-            "vwap":          vwap,
-            "liquidity":     liquidity,
-            "expiration":    expiration,
-            "timestamp":     ts,
-            "source":        "kalshi",
-        })
-
-        # ---------- outcome (YES) ----------
-        rows_o.append({
-            "market_id":     tkr,
-            "outcome_name":  "Yes",
-            "price":         last_px,
-            "volume":        vol_total,
-            "timestamp":     ts,
-            "source":        "kalshi",
-        })
-
-    # insert in FK-safe order
-    insert_to_supabase("markets",          rows_m)
+    insert_to_supabase("markets", rows_m)
     insert_to_supabase("market_snapshots", rows_s, conflict_key=None)
-    insert_to_supabase("market_outcomes",  rows_o, conflict_key=None)
-    print(f"✅ Inserted {len(rows_m)} markets, {len(rows_s)} snapshots, {len(rows_o)} outcomes")
-    print(f"Inserted {len(rows_m)} markets and {len(rows_o)} outcomes")
+    insert_to_supabase("market_outcomes", rows_o, conflict_key=None)
 
-    # diagnostic: show last few rows from Supabase
-    diag_url = f"{SUPABASE_URL}/rest/v1/latest_snapshots?select=market_id,source,price&order=timestamp.desc&limit=3"
-    r = requests.get(diag_url, headers={
-        "apikey": SERVICE_KEY,
-        "Authorization": f"Bearer {SERVICE_KEY}"
-    })
+    diag_url = (
+        f"{SUPABASE_URL}/rest/v1/latest_snapshots?select=market_id,source,price&order=timestamp.desc&limit=3"
+    )
+    r = requests.get(
+        diag_url,
+        headers={"apikey": SERVICE_KEY, "Authorization": f"Bearer {SERVICE_KEY}"},
+    )
     if r.status_code == 200:
         print("Latest snapshots sample:", r.json())
     else:
         print("⚠️ Diagnostics fetch failed", r.status_code, r.text[:150])
+
 
 if __name__ == "__main__":
     main()
