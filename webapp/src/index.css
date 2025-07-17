@@ -84,11 +84,51 @@ th, td {
   text-align: left;
 }
 
-.outcome-row td:first-child {
-  width: 1rem;
-}
-
 tr:hover {
   background-color: #f5faff;
 }
+
+
+/* Market table styles */
+.filters {
+  margin-bottom: 1rem;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.market-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+
+.cards .card {
+  border: 1px solid #e0e0e0;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+  background: #fff;
+}
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  font-weight: bold;
+  margin-bottom: 0.5rem;
+}
+.card-outcome {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.25rem 0;
+  border-top: 1px solid #eee;
+}
+@media (max-width: 640px) {
+  table.market-table { display: none; }
+}
+@media (min-width: 641px) {
+  .cards { display: none; }
+}
+
+
 
