@@ -4,7 +4,7 @@ import os
 import requests
 from datetime import datetime
 from dateutil.parser import parse
-from common import insert_to_supabase
+from common import insert_to_supabase, fetch_price_24h_ago
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SERVICE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
@@ -41,8 +41,10 @@ def main() -> None:
     events = fetch_events()
     ts = datetime.utcnow().isoformat() + "Z"
 
+    rows_e: list[dict] = []
     rows_m: list[dict] = []
-    rows_s: list[dict] = []
+    rows_p: list[dict] = []
+
     rows_o: list[dict] = []
 
     for event in events:
@@ -50,6 +52,12 @@ def main() -> None:
         title = event.get("title") or event_ticker
         if not event_ticker:
             continue
+        rows_e.append({
+            "event_id": event_ticker,
+            "title": title,
+            "source": "kalshi",
+        })
+
         markets = fetch_markets(event_ticker)
 
         for m in markets:
@@ -61,6 +69,26 @@ def main() -> None:
             price = m.get("last_price")
             expiration_raw = m.get("close_time") or m.get("closeTime")
             expiration = parse(expiration_raw).isoformat() if expiration_raw else None
+
+            yes_bid = m.get("yes_bid")
+            yes_ask = m.get("yes_ask")
+            avg_price = None
+            if yes_bid is not None and yes_ask is not None:
+                avg_price = round((yes_bid + yes_ask) / 2, 4)
+            elif price is not None:
+                avg_price = round(price, 4)
+
+            volume = m.get("volume")
+            dollar_volume = None
+            if volume is not None and avg_price is not None:
+                dollar_volume = round(volume * avg_price, 2)
+
+            past = fetch_price_24h_ago(ticker)
+            change_24h = None
+            pct_change = None
+            if past is not None and avg_price is not None:
+                change_24h = round(avg_price - past, 4)
+                pct_change = round(change_24h / past * 100, 2) if past else None
 
             rows_m.append(
                 {
@@ -79,14 +107,25 @@ def main() -> None:
             rows_s.append(
                 {
                     "market_id": ticker,
-                    "price": round(price, 4) if price is not None else None,
-                    "yes_bid": m.get("yes_bid"),
-                    "no_bid": m.get("no_bid"),
-                    "volume": m.get("volume"),
-                    "dollar_volume": None,
+                    "price": avg_price,
+                    "yes_bid": yes_bid,
+                    "no_bid": yes_ask,
+                    "volume": volume,
+                    "dollar_volume": dollar_volume,
                     "vwap": None,
                     "liquidity": m.get("open_interest"),
                     "expiration": expiration,
+                    "timestamp": ts,
+                    "source": "kalshi",
+                }
+            )
+
+            rows_p.append(
+                {
+                    "market_id": ticker,
+                    "price": avg_price,
+                    "change_24h": change_24h,
+                    "percent_change_24h": pct_change,
                     "timestamp": ts,
                     "source": "kalshi",
                 }
@@ -96,15 +135,17 @@ def main() -> None:
                 {
                     "market_id": ticker,
                     "outcome_name": candidate,
-                    "price": price,
+                    "price": avg_price,
                     "volume": None,
                     "timestamp": ts,
                     "source": "kalshi",
                 }
             )
 
+    insert_to_supabase("events", rows_e)
     insert_to_supabase("markets", rows_m)
     insert_to_supabase("market_snapshots", rows_s, conflict_key=None)
+    insert_to_supabase("market_prices", rows_p, conflict_key=None)
     insert_to_supabase("market_outcomes", rows_o, conflict_key=None)
 
     diag_url = (
