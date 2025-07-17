@@ -1,202 +1,219 @@
-import { useEffect, useState } from 'react'
+import { useMemo, useState } from 'react'
 import './App.css'
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
-
-function credentialsValid() {
-  return (
-    SUPABASE_URL &&
-    SUPABASE_ANON_KEY &&
-    !SUPABASE_URL.includes('your-project') &&
-    !SUPABASE_ANON_KEY.includes('your-project')
-  )
-}
-
-async function api(path) {
-  if (!credentialsValid()) throw new Error('Supabase credentials missing')
-  const res = await fetch(`${SUPABASE_URL}${path}`, {
-    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
-    mode: 'cors'
-  })
-  if (!res.ok) throw new Error(`Supabase ${res.status}: ${await res.text()}`)
-  return res.json()
-}
-
-function App() {
-  const [rows, setRows] = useState([])
-  const [sortKey, setSortKey] = useState('volume24h')
-  const [sortDir, setSortDir] = useState('desc')
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    if (!credentialsValid()) {
-      setError('Supabase credentials missing')
-      setRows([])
-      return
-    }
-    loadMarkets()
-  }, [sortKey, sortDir])
-
-  async function loadMarkets() {
-    setError('')
-    if (!credentialsValid()) {
-      setError('Supabase credentials missing')
-      setRows([])
-      return
-    }
-    try {
-      const now = new Date().toISOString()
-      const marketsRaw = await api(
-        `/rest/v1/latest_snapshots` +
-        `?select=market_id,source,market_name,expiration,tags,volume` +
-        `&order=volume.desc&limit=100`
-      )
-      const markets = marketsRaw.filter(m => !m.expiration || m.expiration > now)
-      console.log('Market data from Supabase:', markets.slice(0, 3))
-
-      if (!markets.length) throw new Error('No active markets')
-
-      const idList = markets.map(m => `'${m.market_id}'`).join(',')
-      const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
-
-      const outcomes = await api(
-        `/rest/v1/market_outcomes` +
-        `?select=market_id,outcome_name,price,volume,timestamp` +
-        `&market_id=in.(${idList})&order=timestamp.desc`
-      )
-
-      const latest = {}
-      outcomes.forEach(o => {
-        const key = `${o.market_id}|${o.outcome_name}`
-        if (!latest[key]) latest[key] = o
-      })
-
-      const prevRows = await api(
-        `/rest/v1/market_outcomes` +
-        `?select=market_id,outcome_name,price` +
-        `&market_id=in.(${idList})&timestamp=lt.${since}&order=timestamp.desc`
-      )
-
-      const prevPrice = {}
-      prevRows.forEach(p => {
-        const key = `${p.market_id}|${p.outcome_name}`
-        if (!prevPrice[key]) prevPrice[key] = p.price
-      })
-
-      const grouped = {}
-      Object.values(latest).forEach(o => {
-        o.price24h = prevPrice[`${o.market_id}|${o.outcome_name}`]
-        if (o.price != null && o.price24h != null) {
-          o.changePct = ((o.price - o.price24h) * 100).toFixed(2)
-        } else {
-          o.changePct = null
-        }
-        ;(grouped[o.market_id] ||= []).push(o)
-      })
-
-      const final = markets.map(m => {
-        const outs = grouped[m.market_id] || []
-        outs.sort((a, b) => (b.price ?? 0) - (a.price ?? 0))
-        const top = outs[0] || {}
-        return {
-          market_id: m.market_id,
-          market_name: m.market_name,
-          source: m.source.startsWith('polymarket') ? 'polymarket' : m.source,
-          expiration: m.expiration,
-          tags: m.tags,
-          volume24h: top.volume,
-          topOutcome: top.outcome_name,
-          price: top.price,
-          changePct: top.changePct,
-          outcomes: outs
-        }
-      })
-
-      setRows(final)
-    } catch (err) {
-      console.error(err)
-      setError('Failed to load market data.')
-      setRows([])
-    }
+const SAMPLE_ROWS = [
+  {
+    event_id: 'E1',
+    title: 'US Presidential Election 2024',
+    source: 'kalshi',
+    category: 'politics',
+    outcome_name: 'Trump',
+    last_price: 0.55,
+    price_24h: 0.53,
+    dollar_volume: 100000
+  },
+  {
+    event_id: 'E1',
+    title: 'US Presidential Election 2024',
+    source: 'kalshi',
+    category: 'politics',
+    outcome_name: 'Biden',
+    last_price: 0.4,
+    price_24h: 0.42,
+    dollar_volume: 75000
+  },
+  {
+    event_id: 'E2',
+    title: 'Bitcoin above $50k Dec 2025',
+    source: 'polymarket',
+    category: 'crypto',
+    outcome_name: 'Yes',
+    last_price: 0.65,
+    price_24h: 0.6,
+    dollar_volume: 50000
+  },
+  {
+    event_id: 'E2',
+    title: 'Bitcoin above $50k Dec 2025',
+    source: 'polymarket',
+    category: 'crypto',
+    outcome_name: 'No',
+    last_price: 0.35,
+    price_24h: 0.4,
+    dollar_volume: 25000
+  },
+  {
+    event_id: 'E3',
+    title: 'Will CPI exceed 4% in 2025?',
+    source: 'kalshi',
+    category: 'economics',
+    outcome_name: 'Yes',
+    last_price: 0.25,
+    price_24h: 0.3,
+    dollar_volume: 15000
+  },
+  {
+    event_id: 'E3',
+    title: 'Will CPI exceed 4% in 2025?',
+    source: 'kalshi',
+    category: 'economics',
+    outcome_name: 'No',
+    last_price: 0.75,
+    price_24h: 0.7,
+    dollar_volume: 15000
   }
+]
 
-  const displayed = [...rows].sort((a, b) => {
-      const va = a[sortKey] ?? -Infinity
-      const vb = b[sortKey] ?? -Infinity
-      return sortDir === 'desc' ? vb - va : va - vb
+function groupRows(rows) {
+  const grouped = {}
+  rows.forEach(r => {
+    const g = grouped[r.event_id] || {
+      event_id: r.event_id,
+      title: r.title,
+      source: r.source,
+      category: r.category,
+      outcomes: [],
+      dollar_volume: 0,
+      price: null,
+      change: null
+    }
+
+    const change =
+      r.last_price != null && r.price_24h != null
+        ? (r.last_price - r.price_24h) * 100
+        : null
+
+    g.outcomes.push({
+      name: r.outcome_name,
+      last_price: r.last_price,
+      price_24h: r.price_24h,
+      dollar_volume: r.dollar_volume,
+      change
     })
+    g.dollar_volume = Math.max(g.dollar_volume, r.dollar_volume ?? 0)
+    grouped[r.event_id] = g
+  })
 
-  return (
-    <div className="App">
-      <h1>Prediction Pulse: Top Markets</h1>
-      {/* removed filters */}
-      {error && <p className="error">{error}</p>}
-      {!rows.length && !error && <p style={{ color: 'gray' }}>Loading...</p>}
-      {rows.length > 0 && (
-        <table>
-          <thead>
-            <tr>
-              <th
-                onClick={() => toggleSort('market_name')}
-                data-sort="market_name"
-              >
-                Market{' '}
-                {sortKey === 'market_name' ? (sortDir === 'desc' ? '↓' : '↑') : ''}
-              </th>
-              <th>Top Outcome</th>
-              <th onClick={() => toggleSort('price')} data-sort="price">
-                Price {sortKey === 'price' ? (sortDir === 'desc' ? '↓' : '↑') : ''}
-              </th>
-              <th onClick={() => toggleSort('changePct')} data-sort="changePct">
-                24h Change{' '}
-                {sortKey === 'changePct' ? (sortDir === 'desc' ? '↓' : '↑') : ''}
-              </th>
-              <th onClick={() => toggleSort('volume24h')} data-sort="volume24h">
-                24h Volume{' '}
-                {sortKey === 'volume24h' ? (sortDir === 'desc' ? '↓' : '↑') : ''}
-              </th>
-              <th onClick={() => toggleSort('expiration')} data-sort="expiration">
-                End Date{' '}
-                {sortKey === 'expiration' ? (sortDir === 'desc' ? '↓' : '↑') : ''}
-              </th>
-              <th>Tags</th>
-            </tr>
-          </thead>
-          <tbody>
-            {displayed.map(row => (
-              <>
-                <tr key={row.market_id} className="market-row">
-                  <td>{row.market_name || row.market_id}</td>
-                  <td>{row.topOutcome || '—'}</td>
-                  <td>{row.price == null ? '—' : `${(row.price * 100).toFixed(1)}%`}</td>
-                  <td>{row.changePct == null ? '—' : `${row.changePct}%`}</td>
-                  <td>{row.volume24h == null ? '—' : row.volume24h.toLocaleString()}</td>
-                  <td>{row.expiration ? new Date(row.expiration).toLocaleDateString() : '—'}</td>
-                  <td>{(row.tags || []).join(', ')}</td>
-                </tr>
-                {row.outcomes.slice(1).map(o => (
-                  <tr key={`${row.market_id}-${o.outcome_name}`} className="outcome-row">
-                    <td></td>
-                    <td>{o.outcome_name}</td>
-                    <td>{o.price == null ? '—' : `${(o.price * 100).toFixed(1)}%`}</td>
-                    <td>{o.changePct == null ? '—' : `${o.changePct}%`}</td>
-                    <td>{o.volume == null ? '—' : o.volume.toLocaleString()}</td>
-                    <td colSpan="3"></td>
-                  </tr>
-                ))}
-              </>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
+  return Object.values(grouped).map(g => {
+    g.outcomes.sort((a, b) => (b.last_price ?? 0) - (a.last_price ?? 0))
+    g.price = g.outcomes[0]?.last_price ?? null
+    g.change = g.outcomes[0]?.change ?? null
+    return g
+  })
+}
+
+function formatPrice(p) {
+  return p == null ? '—' : `${(p * 100).toFixed(2)}%`
+}
+
+function formatChange(c) {
+  if (c == null) return '—'
+  const arrow = c < 0 ? '↓' : '↑'
+  return `${arrow} ${Math.abs(c).toFixed(2)}%`
+}
+
+export default function App() {
+  const events = useMemo(() => groupRows(SAMPLE_ROWS), [])
+  const categories = useMemo(
+    () => Array.from(new Set(events.map(e => e.category))),
+    [events]
   )
 
-  function toggleSort(key) {
+  const [sourceFilter, setSourceFilter] = useState('all')
+  const [catFilter, setCatFilter] = useState('all')
+  const [sortKey, setSortKey] = useState('dollar_volume')
+  const [sortDir, setSortDir] = useState('desc')
+
+  const filtered = events.filter(e => {
+    const matchSource = sourceFilter === 'all' || e.source === sourceFilter
+    const matchCat = catFilter === 'all' || e.category === catFilter
+    return matchSource && matchCat
+  })
+
+  const sorted = [...filtered].sort((a, b) => {
+    const va = a[sortKey] ?? -Infinity
+    const vb = b[sortKey] ?? -Infinity
+    return sortDir === 'desc' ? vb - va : va - vb
+  })
+
+  const toggleSort = key => {
     setSortDir(prev => (sortKey === key && prev === 'desc' ? 'asc' : 'desc'))
     setSortKey(key)
   }
+
+  return (
+    <div id="rootInner">
+      <h1>Prediction Markets</h1>
+      <div className="filters">
+        <label>
+          Source:
+          <select value={sourceFilter} onChange={e => setSourceFilter(e.target.value)}>
+            <option value="all">All</option>
+            <option value="kalshi">Kalshi</option>
+            <option value="polymarket">Polymarket</option>
+          </select>
+        </label>
+        <label>
+          Category:
+          <select value={catFilter} onChange={e => setCatFilter(e.target.value)}>
+            <option value="all">All</option>
+            {categories.map(c => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <table className="market-table">
+        <thead>
+          <tr>
+            <th>Event</th>
+            <th>Outcome</th>
+            <th onClick={() => toggleSort('price')} data-sort="price">Price</th>
+            <th onClick={() => toggleSort('change')} data-sort="change">24h Change</th>
+            <th onClick={() => toggleSort('dollar_volume')} data-sort="dollar_volume">Dollar Volume</th>
+            <th>Source</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map(ev => (
+            <>
+              {ev.outcomes.map((o, idx) => (
+                <tr key={`${ev.event_id}-${o.name}`}> 
+                  {idx === 0 ? (
+                    <td rowSpan={ev.outcomes.length}>{ev.title}</td>
+                  ) : null}
+                  <td>{o.name}</td>
+                  <td>{formatPrice(o.last_price)}</td>
+                  <td>{formatChange(o.change)}</td>
+                  <td>{o.dollar_volume.toLocaleString()}</td>
+                  {idx === 0 ? (
+                    <td rowSpan={ev.outcomes.length}>{ev.source}</td>
+                  ) : null}
+                </tr>
+              ))}
+            </>
+          ))}
+        </tbody>
+      </table>
+      <div className="cards">
+        {sorted.map(ev => (
+          <div key={ev.event_id} className="card">
+            <div className="card-header">
+              <span>{ev.title}</span>
+              <span>{ev.source}</span>
+            </div>
+            {ev.outcomes.map(o => (
+              <div key={o.name} className="card-outcome">
+                <span>{o.name}</span>
+                <span>{formatPrice(o.last_price)}</span>
+                <span>{formatChange(o.change)}</span>
+                <span>{o.dollar_volume.toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
 }
 
-export default App
