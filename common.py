@@ -4,6 +4,7 @@ Shared helpers for every ingestion script.
 import os
 import requests
 import itertools
+import time
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
@@ -31,6 +32,20 @@ def _chunked(iterable, size: int = 500):
         if not batch:
             break
         yield batch
+
+def request_json(url: str, *, headers=None, params=None,
+                 tries: int = 3, backoff: float = 1.5, timeout: int = 20):
+    """Return JSON response from *url* with simple retries."""
+    for i in range(tries):
+        try:
+            r = requests.get(url, headers=headers, params=params, timeout=timeout)
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            print(f"request failed ({i + 1}/{tries}) {url}: {e}")
+            if i == tries - 1:
+                return None
+            time.sleep(backoff * (2 ** i))
 
 def insert_to_supabase(table: str, rows: list, conflict_key: str | None = "market_id"):
     """
