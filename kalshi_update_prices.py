@@ -1,10 +1,10 @@
 import os
-import time
 import logging
-import requests
 from datetime import datetime, timedelta, timezone
 from dateutil import parser
-from common import insert_to_supabase, fetch_stats_concurrent
+from common import insert_to_supabase, fetch_stats_concurrent, request_json
+import requests
+import time
 
 # refresh prices for the most active Kalshi markets (24h volume)
 
@@ -30,21 +30,6 @@ TRADES_ENDPOINT = "https://api.elections.kalshi.com/trade-api/v2/markets/{}/trad
 
 
 
-def request_json(url: str, headers=None, params=None, tries: int = 3, backoff: float = 1.5):
-    """GET *url* and return JSON with simple retries."""
-    for i in range(tries):
-        try:
-            r = requests.get(url, headers=headers, params=params, timeout=20)
-            r.raise_for_status()
-            return r.json()
-        except Exception as e:
-            logging.warning("request failed (%s/%s) %s: %s", i + 1, tries, url, e)
-            if i == tries - 1:
-                return None
-            time.sleep(backoff * (2**i))
-
-def fetch_all_markets(limit=1000):
-    markets, seen, offset = [], set(), 0
     while True:
         j = request_json(
             MARKETS_URL,

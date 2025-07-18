@@ -1,7 +1,5 @@
 import os
-import time
 import logging
-import requests
 from datetime import datetime, timezone
 from dateutil import parser
 from common import (
@@ -9,7 +7,10 @@ from common import (
     fetch_clob,
     last24h_stats,
     CLOB_URL,
+    request_json,
 )
+import requests
+import time
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SERVICE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
@@ -24,20 +25,6 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(message)s")
 
 
 
-
-def request_json(url: str, headers=None, params=None, tries: int = 3, backoff: float = 1.5):
-    for i in range(tries):
-        try:
-            r = requests.get(url, headers=headers, params=params, timeout=20)
-            r.raise_for_status()
-            return r.json()
-        except Exception as e:
-            logging.warning("request failed (%s/%s) %s: %s", i + 1, tries, url, e)
-            if i == tries - 1:
-                return None
-            time.sleep(backoff * (2**i))
-
-# ───────────────── helpers
 # `fetch_clob` and `last24h_stats` are imported from ``common`` so that they
 # respect any environment-based overrides for Polymarket endpoints.
 

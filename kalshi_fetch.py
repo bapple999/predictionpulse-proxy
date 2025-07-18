@@ -44,7 +44,7 @@ def main() -> None:
     rows_e: list[dict] = []
     rows_m: list[dict] = []
     rows_p: list[dict] = []
-
+    rows_s: list[dict] = []
     rows_o: list[dict] = []
 
     for event in events:
