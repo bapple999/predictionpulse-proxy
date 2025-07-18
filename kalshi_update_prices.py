@@ -29,7 +29,11 @@ MARKETS_URL = "https://api.elections.kalshi.com/trade-api/v2/markets"
 TRADES_ENDPOINT = "https://api.elections.kalshi.com/trade-api/v2/markets/{}/trades"
 
 
-
+def fetch_all_markets(limit: int = 1000) -> list[dict]:
+    """Return a list of all Kalshi markets."""
+    markets: list[dict] = []
+    seen: set[str] = set()
+    offset = 0
     while True:
         j = request_json(
             MARKETS_URL,
