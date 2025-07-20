@@ -10,7 +10,7 @@ SUPABASE_URL = os.environ["SUPABASE_URL"]
 SERVICE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 
 HEADERS_KALSHI = {
-    "Authorization": f"Bearer {os.environ['KALSHI_API_KEY']}",
+    "Authorization": f"Bearer {os.environ.get('KALSHI_API_KEY', 'test-key')}",
     "Content-Type": "application/json",
 }
 
@@ -35,6 +35,26 @@ def fetch_markets(event_ticker: str) -> list[dict]:
     )
     r.raise_for_status()
     return r.json().get("markets", [])
+
+
+def format_market_row(event: dict, market: dict) -> dict:
+    """Return a dict for the markets table using *event* and *market* data."""
+    ticker = market.get("ticker")
+    candidate = ticker.split("-")[-1] if ticker else None
+    expiration_raw = market.get("close_time") or market.get("closeTime")
+    expiration = parse(expiration_raw).isoformat() if expiration_raw else None
+    title = event.get("title") or event.get("ticker")
+    return {
+        "market_id": ticker,
+        "market_name": candidate,
+        "market_description": title,
+        "event_name": title,
+        "event_ticker": event.get("ticker"),
+        "expiration": expiration,
+        "tags": ["kalshi"],
+        "source": "kalshi",
+        "status": market.get("status") or "TRADING",
+    }
 
 
 def main() -> None:
@@ -64,11 +84,11 @@ def main() -> None:
             ticker = m.get("ticker")
             if not ticker:
                 continue
+            row_m = format_market_row(event, m)
 
-            candidate = ticker.split("-")[-1]
+            candidate = row_m["market_name"]
+            expiration = row_m["expiration"]
             price = m.get("last_price")
-            expiration_raw = m.get("close_time") or m.get("closeTime")
-            expiration = parse(expiration_raw).isoformat() if expiration_raw else None
 
             yes_bid = m.get("yes_bid")
             yes_ask = m.get("yes_ask")
@@ -90,19 +110,7 @@ def main() -> None:
                 change_24h = round(avg_price - past, 4)
                 pct_change = round(change_24h / past * 100, 2) if past else None
 
-            rows_m.append(
-                {
-                    "market_id": ticker,
-                    "market_name": candidate,
-                    "market_description": title,
-                    "event_name": title,
-                    "event_ticker": event_ticker,
-                    "expiration": expiration,
-                    "tags": ["kalshi"],
-                    "source": "kalshi",
-                    "status": m.get("status") or "TRADING",
-                }
-            )
+            rows_m.append(row_m)
 
             rows_s.append(
                 {
