@@ -29,19 +29,25 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(message)s")
 # respect any environment-based overrides for Polymarket endpoints.
 
 def load_active_market_info() -> dict[str, tuple[str | None, datetime | None]]:
-    """Return mapping of market_id to (slug, expiration) for known markets."""
+    """Return mapping of active Polymarket ids to (slug, expiration)."""
     url = (
         f"{SUPABASE_URL}/rest/v1/markets"
-        f"?select=market_id,event_ticker,expiration&source=eq.polymarket"
+        f"?select=market_id,event_ticker,expiration,status&source=eq.polymarket"
     )
     rows = request_json(url, headers=SUPA_HEADERS) or []
+    now = datetime.now(timezone.utc)
     info: dict[str, tuple[str | None, datetime | None]] = {}
     for r in rows:
         mid = r.get("market_id")
         slug = r.get("event_ticker")
         exp_raw = r.get("expiration")
         exp_dt = parser.isoparse(exp_raw) if exp_raw else None
-        if mid:
+        status = (r.get("status") or "").upper()
+        if (
+            mid
+            and status not in {"RESOLVED", "CANCELLED"}
+            and (exp_dt is None or exp_dt > now)
+        ):
             info[mid] = (slug, exp_dt)
     return info
 
