@@ -27,3 +27,16 @@ def test_format_market_row_basic():
     assert row["market_description"] == "Presidential Election"
     assert row["status"] == "TRADING"
     assert row["tags"] == ["kalshi"]
+
+
+def test_format_market_row_event_ticker_fallback():
+    event = {"title": "New Pope", "event_ticker": "EVT-POPE"}
+    market = {
+        "ticker": "EVT-POPE-JOHN",
+        "close_time": "2030-01-01T00:00:00Z",
+    }
+    row = format_market_row(event, market)
+    assert row["market_id"] == "EVT-POPE-JOHN"
+    assert row["market_name"] == "JOHN"
+    assert row["event_ticker"] == "EVT-POPE"
+    assert row["market_description"] == "New Pope"
