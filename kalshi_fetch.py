@@ -57,13 +57,14 @@ def format_market_row(event: dict, market: dict) -> dict:
     candidate = ticker.split("-")[-1] if ticker else None
     expiration_raw = market.get("close_time") or market.get("closeTime")
     expiration = parse(expiration_raw).isoformat() if expiration_raw else None
-    title = event.get("title") or event.get("ticker")
+    event_ticker = event.get("ticker") or event.get("event_ticker")
+    title = event.get("title") or event_ticker
     return {
         "market_id": ticker,
         "market_name": candidate,
         "market_description": title,
         "event_name": title,
-        "event_ticker": event.get("ticker"),
+        "event_ticker": event_ticker,
         "expiration": expiration,
         "tags": ["kalshi"],
         "source": "kalshi",
@@ -82,7 +83,7 @@ def main() -> None:
     rows_o: list[dict] = []
 
     for event in events:
-        event_ticker = event.get("ticker")
+        event_ticker = event.get("ticker") or event.get("event_ticker")
         title = event.get("title") or event_ticker
         if not event_ticker:
             continue
