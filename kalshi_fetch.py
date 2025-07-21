@@ -1,6 +1,7 @@
 """Load events and candidate markets from Kalshi and store them."""
 
 import os
+import json
 from datetime import datetime
 from dateutil.parser import parse
 
@@ -15,11 +16,10 @@ HEADERS_KALSHI = {
     "Content-Type": "application/json",
 }
 
-# Base URL for Kalshi API. The default points to ``api.elections.kalshi.com``.
-# ``KALSHI_API_BASE`` can override this value.
-API_BASE = os.environ.get(
-    "KALSHI_API_BASE", "https://api.elections.kalshi.com/trade-api/v2"
-)
+# Base URL for Kalshi API. The default now points to ``api.elections.kalshi.com``.
+# ``KALSHI_API_BASE`` can override this value. ``FALLBACK_BASE`` retains the old
+# ``trade-api`` endpoint for backwards compatibility if the new host fails.
+API_BASE = os.environ.get("KALSHI_API_BASE", "https://api.elections.kalshi.com")
 FALLBACK_BASE = "https://api.elections.kalshi.com/trade-api/v2"
 
 EVENTS_URL = f"{API_BASE}/events"
@@ -38,6 +38,8 @@ def _request_with_fallback(url: str, *, params=None) -> dict | None:
 def fetch_events() -> list[dict]:
     """Return a list of election events."""
     j = _request_with_fallback(EVENTS_URL)
+    print("\N{POLICE CARS REVOLVING LIGHT} Kalshi response:")
+    print(json.dumps(j, indent=2) if j is not None else "None")
     return j.get("events", []) if isinstance(j, dict) else []
 
 

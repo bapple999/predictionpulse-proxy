@@ -25,8 +25,18 @@ HEADERS_KALSHI = {
     "Content-Type": "application/json",
 }
 
-MARKETS_URL = "https://api.elections.kalshi.com/trade-api/v2/markets"
-TRADES_ENDPOINT = "https://api.elections.kalshi.com/trade-api/v2/markets/{}/trades"
+API_BASE = os.environ.get("KALSHI_API_BASE", "https://api.elections.kalshi.com")
+FALLBACK_BASE = "https://api.elections.kalshi.com/trade-api/v2"
+MARKETS_URL = f"{API_BASE}/markets"
+TRADES_ENDPOINT = f"{API_BASE}/markets/{{}}/trades"
+
+
+def _request_with_fallback(url: str, *, params=None) -> dict | None:
+    j = request_json(url, headers=HEADERS_KALSHI, params=params)
+    if j is None and API_BASE != FALLBACK_BASE:
+        alt_url = url.replace(API_BASE, FALLBACK_BASE)
+        j = request_json(alt_url, headers=HEADERS_KALSHI, params=params)
+    return j
 
 
 def fetch_all_markets(limit: int = 1000) -> list[dict]:
@@ -35,10 +45,8 @@ def fetch_all_markets(limit: int = 1000) -> list[dict]:
     seen: set[str] = set()
     offset = 0
     while True:
-        j = request_json(
-            MARKETS_URL,
-            headers=HEADERS_KALSHI,
-            params={"limit": limit, "offset": offset},
+        j = _request_with_fallback(
+            MARKETS_URL, params={"limit": limit, "offset": offset}
         )
         if j is None:
             break
@@ -70,7 +78,7 @@ def fetch_active_market_info() -> dict[str, datetime | None]:
 
 def fetch_trade_stats(ticker: str):
     try:
-        j = request_json(TRADES_ENDPOINT.format(ticker), headers=HEADERS_KALSHI)
+        j = _request_with_fallback(TRADES_ENDPOINT.format(ticker))
         if j is None:
             return 0.0, 0, None
         trades = j.get("trades", [])
