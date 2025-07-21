@@ -145,7 +145,9 @@ Full‑fetch jobs rebuild metadata once a day; lightweight update jobs keep quot
 
 SQL definitions live in [`schema.sql`](schema.sql).
 
+* **`events`** — groups related markets (primary key `event_id`)
 * **`markets`** — static metadata (primary key `market_id`)
+* **`market_prices`** — daily price records and change metrics
 * **`market_snapshots`** — price / volume time‑series
 * **`market_outcomes`** — outcome‑level bids (Yes/No, Team A/Team B, etc.)
 
