@@ -3,7 +3,7 @@ import asyncio
 import json
 import websockets
 
-WS_URL = os.environ.get("KALSHI_WS_URL", "wss://api.elections.kalshi.com/trade-api/ws/v2")
+WS_URL = os.environ.get("KALSHI_WS_URL", "wss://api.elections.kalshi.com/ws/v2")
 API_KEY = os.environ.get("KALSHI_API_KEY")
 if not API_KEY:
     raise RuntimeError("KALSHI_API_KEY must be set")
