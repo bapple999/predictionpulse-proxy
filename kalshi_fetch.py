@@ -43,11 +43,24 @@ def fetch_events() -> list[dict]:
     return j.get("events", []) if isinstance(j, dict) else []
 
 
-def fetch_markets(event_ticker: str) -> list[dict]:
-    """Return markets associated with *event_ticker*."""
+def fetch_markets(event_ticker: str, series_ticker: str | None) -> list[dict]:
+    """Return markets associated with *event_ticker* or *series_ticker*.
+
+    Some newer Kalshi endpoints expose ``series_ticker`` instead of
+    ``event_ticker``.  Try both to minimize noisy 404 errors.
+    """
+
+    # First try the standard ``event_ticker`` parameter.
     j = _request_with_fallback(
         MARKETS_URL, params={"event_ticker": event_ticker}
     )
+
+    # Fallback to ``series_ticker`` if nothing was returned.
+    if (not j or not j.get("markets")) and series_ticker:
+        j = _request_with_fallback(
+            MARKETS_URL, params={"series_ticker": series_ticker}
+        )
+
     return j.get("markets", []) if isinstance(j, dict) else []
 
 
@@ -93,7 +106,7 @@ def main() -> None:
             "source": "kalshi",
         })
 
-        markets = fetch_markets(event_ticker)
+        markets = fetch_markets(event_ticker, event.get("series_ticker"))
 
         for m in markets:
             ticker = m.get("ticker")
