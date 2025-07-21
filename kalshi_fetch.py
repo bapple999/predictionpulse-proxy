@@ -1,10 +1,11 @@
 """Load events and candidate markets from Kalshi and store them."""
 
 import os
-import requests
 from datetime import datetime
 from dateutil.parser import parse
-from common import insert_to_supabase, fetch_price_24h_ago
+
+
+from common import insert_to_supabase, fetch_price_24h_ago, request_json
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SERVICE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
@@ -14,27 +15,40 @@ HEADERS_KALSHI = {
     "Content-Type": "application/json",
 }
 
-EVENTS_URL = "https://api.elections.kalshi.com/trade-api/v2/events"
-MARKETS_URL = "https://api.elections.kalshi.com/trade-api/v2/markets"
+# Base URL for Kalshi API. Historically the host changed from
+# ``api.elections.kalshi.com`` to ``trading-api.kalshi.com``.  Allow
+# overriding via ``KALSHI_API_BASE`` and fall back to the newer host if
+# the request fails.
+API_BASE = os.environ.get(
+    "KALSHI_API_BASE", "https://api.elections.kalshi.com/trade-api/v2"
+)
+FALLBACK_BASE = "https://trading-api.kalshi.com/trade-api/v2"
+
+EVENTS_URL = f"{API_BASE}/events"
+MARKETS_URL = f"{API_BASE}/markets"
+
+
+def _request_with_fallback(url: str, *, params=None) -> dict | None:
+    """Return JSON from *url* with fallback to the newer API host."""
+    j = request_json(url, headers=HEADERS_KALSHI, params=params)
+    if j is None and API_BASE != FALLBACK_BASE:
+        alt_url = url.replace(API_BASE, FALLBACK_BASE)
+        j = request_json(alt_url, headers=HEADERS_KALSHI, params=params)
+    return j
 
 
 def fetch_events() -> list[dict]:
     """Return a list of election events."""
-    r = requests.get(EVENTS_URL, headers=HEADERS_KALSHI, timeout=15)
-    r.raise_for_status()
-    return r.json().get("events", [])
+    j = _request_with_fallback(EVENTS_URL)
+    return j.get("events", []) if isinstance(j, dict) else []
 
 
 def fetch_markets(event_ticker: str) -> list[dict]:
     """Return markets associated with *event_ticker*."""
-    r = requests.get(
-        MARKETS_URL,
-        headers=HEADERS_KALSHI,
-        params={"event_ticker": event_ticker},
-        timeout=15,
+    j = _request_with_fallback(
+        MARKETS_URL, params={"event_ticker": event_ticker}
     )
-    r.raise_for_status()
-    return r.json().get("markets", [])
+    return j.get("markets", []) if isinstance(j, dict) else []
 
 
 def main() -> None:
@@ -151,14 +165,14 @@ def main() -> None:
     diag_url = (
         f"{SUPABASE_URL}/rest/v1/latest_snapshots?select=market_id,source,price&order=timestamp.desc&limit=3"
     )
-    r = requests.get(
+    j = request_json(
         diag_url,
         headers={"apikey": SERVICE_KEY, "Authorization": f"Bearer {SERVICE_KEY}"},
     )
-    if r.status_code == 200:
-        print("Latest snapshots sample:", r.json())
+    if isinstance(j, list):
+        print("Latest snapshots sample:", j)
     else:
-        print("⚠️ Diagnostics fetch failed", r.status_code, r.text[:150])
+        print("⚠️ Diagnostics fetch failed")
 
 
 if __name__ == "__main__":
