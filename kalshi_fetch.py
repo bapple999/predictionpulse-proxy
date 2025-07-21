@@ -15,14 +15,12 @@ HEADERS_KALSHI = {
     "Content-Type": "application/json",
 }
 
-# Base URL for Kalshi API. Historically the host changed from
-# ``api.elections.kalshi.com`` to ``trading-api.kalshi.com``.  Allow
-# overriding via ``KALSHI_API_BASE`` and fall back to the newer host if
-# the request fails.
+# Base URL for Kalshi API. The default points to ``api.elections.kalshi.com``.
+# ``KALSHI_API_BASE`` can override this value.
 API_BASE = os.environ.get(
     "KALSHI_API_BASE", "https://api.elections.kalshi.com/trade-api/v2"
 )
-FALLBACK_BASE = "https://trading-api.kalshi.com/trade-api/v2"
+FALLBACK_BASE = "https://api.elections.kalshi.com/trade-api/v2"
 
 EVENTS_URL = f"{API_BASE}/events"
 MARKETS_URL = f"{API_BASE}/markets"
