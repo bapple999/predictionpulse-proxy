@@ -8,7 +8,23 @@ from common import (
     CLOB_URL,
     request_json,
 )
-import requests
+try:
+    import requests  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover - handled in tests
+    class _RequestsPlaceholder:
+        RequestException = Exception
+
+        def get(self, *a, **kw):
+            raise RuntimeError(
+                "The 'requests' library is required for network operations"
+            )
+
+        def post(self, *a, **kw):
+            raise RuntimeError(
+                "The 'requests' library is required for network operations"
+            )
+
+    requests = _RequestsPlaceholder()
 import time
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
