@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 from dateutil import parser
 from common import (
     insert_to_supabase,
-    fetch_clob,
     last24h_stats,
     CLOB_URL,
     request_json,
@@ -25,8 +24,9 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(message)s")
 
 
 
-# `fetch_clob` and `last24h_stats` are imported from ``common`` so that they
-# respect any environment-based overrides for Polymarket endpoints.
+# `last24h_stats` is imported from ``common`` so that it respects any
+# environment-based overrides for Polymarket endpoints. CLOB fetching with
+# retries is implemented locally in this module.
 
 def load_active_market_info() -> dict[str, tuple[str | None, datetime | None]]:
     """Return mapping of active Polymarket ids to (slug, expiration)."""
@@ -51,6 +51,47 @@ def load_active_market_info() -> dict[str, tuple[str | None, datetime | None]]:
             info[mid] = (slug, exp_dt)
     return info
 
+
+def fetch_clob_retry(mid: str, slug: str | None = None, *, tries: int = 3,
+                     backoff: float = 1.5):
+    """Fetch CLOB data with retries and logging."""
+    for ident in filter(None, [mid, slug]):
+        delay = backoff
+        for attempt in range(tries):
+            try:
+                r = requests.get(CLOB_URL.format(ident), timeout=8)
+                if r.status_code == 404:
+                    logging.info("clob 404 for %s", ident)
+                    break
+                if 500 <= r.status_code < 600:
+                    logging.warning(
+                        "server error %s for %s: %s",
+                        r.status_code,
+                        ident,
+                        r.text[:150],
+                    )
+                    if attempt < tries - 1:
+                        time.sleep(delay)
+                        delay *= 2
+                        continue
+                if r.status_code != 200:
+                    logging.warning(
+                        "clob fetch failed for %s: %s %s",
+                        ident,
+                        r.status_code,
+                        r.text[:150],
+                    )
+                    break
+                return r.json()
+            except requests.RequestException as e:
+                logging.warning("clob request exception for %s: %s", ident, e)
+                if attempt < tries - 1:
+                    time.sleep(delay)
+                    delay *= 2
+                    continue
+        # try next identifier (slug or id)
+    return None
+
 # ───────────────── main
 def main():
     now = datetime.now(timezone.utc)
@@ -60,8 +101,12 @@ def main():
 
     snapshots, outcomes = [], []
 
-    for mid, (slug, _) in list(active.items())[:FETCH_LIMIT]:
-        clob = fetch_clob(mid, slug)
+    for mid, (slug, exp) in list(active.items())[:FETCH_LIMIT]:
+        if exp and exp <= now:
+            logging.info("skip expired market %s", mid)
+            continue
+
+        clob = fetch_clob_retry(mid, slug)
         if not clob:
             logging.info("clob fetch failed for %s", mid)
             continue
