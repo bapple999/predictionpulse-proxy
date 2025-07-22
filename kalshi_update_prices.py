@@ -25,7 +25,9 @@ HEADERS_KALSHI = {
     "Content-Type": "application/json",
 }
 
-API_BASE = os.environ.get("KALSHI_API_BASE", "https://api.elections.kalshi.com")
+API_BASE = os.environ.get(
+    "KALSHI_API_BASE", "https://trading-api.kalshi.com/trade-api/v2"
+)
 FALLBACK_BASE = "https://api.elections.kalshi.com/trade-api/v2"
 MARKETS_URL = f"{API_BASE}/markets"
 TRADES_ENDPOINT = f"{API_BASE}/markets/{{}}/trades"
