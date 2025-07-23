@@ -2,7 +2,25 @@
 Shared helpers for every ingestion script.
 """
 import os
-import requests
+try:
+    import requests  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover - handled in tests
+    class _RequestsPlaceholder:
+        """Minimal placeholder so tests can monkeypatch ``requests``."""
+
+        RequestException = Exception
+
+        def get(self, *a, **kw):  # pragma: no cover - network disabled
+            raise RuntimeError(
+                "The 'requests' library is required for network operations"
+            )
+
+        def post(self, *a, **kw):  # pragma: no cover - network disabled
+            raise RuntimeError(
+                "The 'requests' library is required for network operations"
+            )
+
+    requests = _RequestsPlaceholder()
 import itertools
 import time
 from datetime import datetime, timedelta

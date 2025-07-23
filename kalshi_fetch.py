@@ -23,7 +23,13 @@ HEADERS_KALSHI = {
 API_BASE = os.environ.get(
     "KALSHI_API_BASE", "https://api.elections.kalshi.com/trade-api/v2"
 )
-FALLBACK_BASE = "https://trading-api.kalshi.com/trade-api/v2"
+
+# Allow specifying the base host without the path. If ``KALSHI_API_BASE``
+# omits the ``/trade-api/v2`` suffix, append it automatically for
+# backwards compatibility.
+if not API_BASE.rstrip('/').endswith("trade-api/v2"):
+    API_BASE = API_BASE.rstrip('/') + '/trade-api/v2'
+FALLBACK_BASE = "https://api.elections.kalshi.com/trade-api/v2"
 
 EVENTS_URL = f"{API_BASE}/events"
 MARKETS_URL = f"{API_BASE}/markets"
