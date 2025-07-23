@@ -16,21 +16,21 @@ HEADERS_KALSHI = {
     "Content-Type": "application/json",
 }
 
-# Base URL for Kalshi API. The default now points to the stable
-# ``trading-api.kalshi.com`` host. ``KALSHI_API_BASE`` can override this
-# value. ``FALLBACK_BASE`` retains the election specific host for backwards
-# compatibility if the newer host fails.
+# Base URL for Kalshi API. The default now points to the new
+# ``api.elections.kalshi.com`` host. ``KALSHI_API_BASE`` can override this
+# value. ``FALLBACK_BASE`` retains the old host for backwards compatibility
+# if the newer host fails.
 API_BASE = os.environ.get(
-    "KALSHI_API_BASE", "https://trading-api.kalshi.com/trade-api/v2"
+    "KALSHI_API_BASE", "https://api.elections.kalshi.com/trade-api/v2"
 )
-FALLBACK_BASE = "https://api.elections.kalshi.com/trade-api/v2"
+FALLBACK_BASE = "https://trading-api.kalshi.com/trade-api/v2"
 
 EVENTS_URL = f"{API_BASE}/events"
 MARKETS_URL = f"{API_BASE}/markets"
 
 
 def _request_with_fallback(url: str, *, params=None) -> dict | None:
-    """Return JSON from *url* with fallback to the newer API host."""
+    """Return JSON from *url* with fallback to the older API host."""
     j = request_json(url, headers=HEADERS_KALSHI, params=params)
     if j is None and API_BASE != FALLBACK_BASE:
         alt_url = url.replace(API_BASE, FALLBACK_BASE)

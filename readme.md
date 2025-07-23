@@ -88,6 +88,7 @@ Planned: deeper summarization models that track *why* probabilities shift over t
 | `SUPABASE_URL`              | e.g. `https://abcde.supabase.co`      |
 | `SUPABASE_SERVICE_ROLE_KEY` | long service key (server‑side only)   |
 | `KALSHI_API_KEY`            | Kalshi personal API token             |
+| `KALSHI_API_BASE`          | (optional) override base API URL      |
 | `KALSHI_WS_URL`             | (optional) override WebSocket endpoint |
 | `POLYMARKET_API_KEY`        | (optional) higher quota for Gamma API |
 | `POLYMARKET_GAMMA_URL`      | (optional) override for Gamma API     |
@@ -96,6 +97,9 @@ Planned: deeper summarization models that track *why* probabilities shift over t
 | `POLYMARKET_TRADES_URL`     | (optional) proxy base for trades API  |
 
 See **`.env.example`** for a template and add them to **`.env`** for local runs. Store them in **GitHub Secrets** for CI.
+
+The default Kalshi API endpoint is `https://api.elections.kalshi.com/trade-api/v2`. Use
+`KALSHI_API_BASE` if you need to point to a different host.
 
 ### Front-end config
 
