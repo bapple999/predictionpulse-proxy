@@ -44,18 +44,19 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(message)s")
 # environment-based overrides for Polymarket endpoints. CLOB fetching with
 # retries is implemented locally in this module.
 
-def load_active_market_info() -> dict[str, tuple[str | None, datetime | None]]:
-    """Return mapping of active Polymarket ids to (slug, expiration)."""
+def load_active_market_info() -> dict[str, dict]:
+    """Return mapping of active Polymarket ids to info dicts."""
     url = (
         f"{SUPABASE_URL}/rest/v1/markets"
-        f"?select=market_id,event_ticker,expiration,status&source=eq.polymarket"
+        f"?select=market_id,slug,event_ticker,expiration,status,liquidity_type"
+        f"&source=eq.polymarket"
     )
     rows = request_json(url, headers=SUPA_HEADERS) or []
     now = datetime.now(timezone.utc)
-    info: dict[str, tuple[str | None, datetime | None]] = {}
+    info: dict[str, dict] = {}
     for r in rows:
         mid = r.get("market_id")
-        slug = r.get("event_ticker")
+        slug = r.get("slug") or r.get("event_ticker")
         exp_raw = r.get("expiration")
         exp_dt = parser.isoparse(exp_raw) if exp_raw else None
         status = (r.get("status") or "").upper()
@@ -64,7 +65,12 @@ def load_active_market_info() -> dict[str, tuple[str | None, datetime | None]]:
             and status not in {"RESOLVED", "CANCELLED"}
             and (exp_dt is None or exp_dt > now)
         ):
-            info[mid] = (slug, exp_dt)
+            info[mid] = {
+                "slug": slug,
+                "expiration": exp_dt,
+                "status": status,
+                "liquidity_type": (r.get("liquidity_type") or "").lower(),
+            }
     return info
 
 
@@ -117,9 +123,18 @@ def main():
 
     snapshots, outcomes = [], []
 
-    for mid, (slug, exp) in list(active.items())[:FETCH_LIMIT]:
+    for mid, info in list(active.items())[:FETCH_LIMIT]:
+        slug = info.get("slug")
+        exp = info.get("expiration")
+        status = info.get("status", "").upper()
+        liquidity_type = info.get("liquidity_type")
+
         if exp and exp <= now:
             logging.info("skip expired market %s", mid)
+            continue
+
+        if liquidity_type != "clob" or status != "TRADING" or not (slug or mid):
+            logging.warning("skip non-clob or non-trading market %s", mid)
             continue
 
         clob = fetch_clob_retry(mid, slug)
