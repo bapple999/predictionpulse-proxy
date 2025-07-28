@@ -104,6 +104,8 @@ def main() -> None:
 
         markets = fetch_markets(event_ticker)
 
+        event_prices: dict[str, float | None] = {}
+
         for m in markets:
             ticker = m.get("ticker")
             if not ticker:
@@ -163,6 +165,7 @@ def main() -> None:
                 }
             )
 
+            event_prices[candidate] = avg_price
             rows_o.append(
                 {
                     "market_id": ticker,
@@ -173,6 +176,27 @@ def main() -> None:
                     "source": "kalshi",
                 }
             )
+
+        # Add other candidate outcomes so each market shows full choices
+        for m in markets:
+            ticker = m.get("ticker")
+            if not ticker:
+                continue
+            for cand, pr in event_prices.items():
+                if pr is None:
+                    continue
+                if cand == ticker.split("-")[-1]:
+                    continue  # already added above
+                rows_o.append(
+                    {
+                        "market_id": ticker,
+                        "outcome_name": cand,
+                        "price": pr,
+                        "volume": None,
+                        "timestamp": ts,
+                        "source": "kalshi",
+                    }
+                )
 
     insert_to_supabase("events", rows_e)
     insert_to_supabase("markets", rows_m)

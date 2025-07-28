@@ -71,9 +71,19 @@ select distinct on (s.market_id)
     s.dollar_volume,
     s.vwap,
     s.liquidity,
-    s.timestamp
+    s.timestamp,
+    coalesce(o.outcomes, '[]'::jsonb) as outcomes
 from market_snapshots s
 join markets m on m.market_id = s.market_id
+left join (
+    select market_id,
+           jsonb_agg(
+               jsonb_build_object('outcome_name', outcome_name, 'price', price)
+               order by outcome_name
+           ) as outcomes
+    from market_outcomes
+    group by market_id
+) o on o.market_id = s.market_id
 join (
     select market_id, min(timestamp) as start_date
     from market_snapshots

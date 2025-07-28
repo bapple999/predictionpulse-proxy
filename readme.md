@@ -160,9 +160,11 @@ SQL definitions live in [`schema.sql`](schema.sql).
 The `tags` column is `jsonb`; just pass a Python list (`["econ", "CPI"]`).
 
 The `latest_snapshots` view returns the most recent snapshot per market and the
-timestamp of the first snapshot as `start_date`. The front‑end queries columns
-`market_id`, `source`, `market_name`, `expiration`, `start_date`, `tags`,
-`price`, `volume`, `dollar_volume`, `liquidity` and `timestamp`.
+timestamp of the first snapshot as `start_date`. Each row also includes
+`outcomes`, a JSON array of all choices and their current price. The front‑end
+queries columns `market_id`, `source`, `market_name`, `expiration`,
+`start_date`, `tags`, `price`, `volume`, `dollar_volume`, `liquidity`,
+`timestamp` and `outcomes`.
 
 ## 🖥 Frontend web app
 
