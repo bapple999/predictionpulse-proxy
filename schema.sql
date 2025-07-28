@@ -71,10 +71,23 @@ select distinct on (s.market_id)
     s.dollar_volume,
     s.vwap,
     s.liquidity,
+    (s.price - p.price)                       as change_24h,
+    case when p.price is not null and p.price <> 0
+         then round((s.price - p.price) / p.price * 100, 2)
+         else null
+    end                                     as percent_change_24h,
     s.timestamp,
     coalesce(o.outcomes, '[]'::jsonb) as outcomes
 from market_snapshots s
 join markets m on m.market_id = s.market_id
+left join lateral (
+    select price
+    from market_snapshots s2
+    where s2.market_id = s.market_id
+      and s2.timestamp <= s.timestamp - interval '24 hours'
+    order by s2.timestamp desc
+    limit 1
+) p on true
 left join (
     select market_id,
            jsonb_agg(
