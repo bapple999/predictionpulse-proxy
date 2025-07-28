@@ -50,7 +50,11 @@ export default function App() {
             '&limit=1000'
         )
         data = data.filter(r => (r.volume ?? 0) > 0)
-        const idList = data.map(r => `'${r.market_id}'`).join(',')
+        const MAX_IDS = 200
+        const idList = data
+          .slice(0, MAX_IDS)
+          .map(r => `'${encodeURIComponent(r.market_id)}'`)
+          .join(',')
         const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
         const prevRows = await api(
           `/rest/v1/market_snapshots?select=market_id,price&market_id=in.(${idList})&timestamp=gt.${since}&order=timestamp.desc`
