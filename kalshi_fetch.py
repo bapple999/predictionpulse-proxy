@@ -198,7 +198,7 @@ def main() -> None:
                     }
                 )
 
-    insert_to_supabase("events", rows_e)
+    insert_to_supabase("events", rows_e, conflict_key="event_id")
     insert_to_supabase("markets", rows_m)
     insert_to_supabase("market_snapshots", rows_s, conflict_key=None)
     insert_to_supabase("market_prices", rows_p, conflict_key=None)

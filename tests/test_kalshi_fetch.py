@@ -40,3 +40,34 @@ def test_format_market_row_event_ticker_fallback():
     assert row["market_name"] == "JOHN"
     assert row["event_ticker"] == "EVT-POPE"
     assert row["market_description"] == "New Pope"
+
+
+def test_main_populates_events(monkeypatch):
+    import kalshi_fetch as kf
+
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "test-key")
+
+    events = [
+        {"ticker": "EVT1", "title": "Event 1"},
+        {"event_ticker": "EVT2"},
+    ]
+
+    monkeypatch.setattr(kf, "fetch_events", lambda: events)
+    monkeypatch.setattr(kf, "fetch_markets", lambda e: [])
+
+    inserted = []
+
+    def fake_insert(table, rows, conflict_key="market_id"):
+        if table == "events":
+            inserted.append((rows, conflict_key))
+
+    monkeypatch.setattr(kf, "insert_to_supabase", fake_insert)
+
+    kf.main()
+
+    assert inserted[0][1] == "event_id"
+    assert inserted[0][0] == [
+        {"event_id": "EVT1", "title": "Event 1", "source": "kalshi"},
+        {"event_id": "EVT2", "title": "EVT2", "source": "kalshi"},
+    ]
