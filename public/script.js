@@ -35,7 +35,11 @@ async function loadMarkets() {
 
     if (!rows.length) throw new Error("No rows after filter");
 
-    const idList = rows.map(r => `'${r.market_id}'`).join(",");
+    const MAX_IDS = 200;
+    const idList = rows
+      .slice(0, MAX_IDS)
+      .map(r => `'${encodeURIComponent(r.market_id)}'`)
+      .join(",");
     const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
 
     const prevRows = await api(
