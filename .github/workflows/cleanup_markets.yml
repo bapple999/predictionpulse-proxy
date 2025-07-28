@@ -1,4 +1,4 @@
-name: Cleanup Snapshots
+name: Cleanup Markets
 
 on:
   schedule:
@@ -20,10 +20,10 @@ jobs:
       - name: Install deps
         run: pip install -r requirements.txt
 
-      - name: Remove old snapshots
+      - name: Remove old snapshots and markets
         env:
           SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           CUTOFF=$(date -u --iso-8601=seconds -d '90 days ago')
-          python cleanup_snapshots.py "$CUTOFF"
+          python cleanup_markets.py "$CUTOFF"
