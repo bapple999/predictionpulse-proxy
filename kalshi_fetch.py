@@ -104,6 +104,7 @@ def main() -> None:
 
         markets = fetch_markets(event_ticker)
 
+        # map outcome label -> latest price
         event_prices: dict[str, float | None] = {}
 
         for m in markets:
@@ -111,6 +112,7 @@ def main() -> None:
             if not ticker:
                 continue
             row_m = format_market_row(event, m)
+            rows_m.append(row_m)
 
             candidate = row_m["market_name"]
             expiration = row_m["expiration"]
@@ -135,8 +137,6 @@ def main() -> None:
             if past is not None and avg_price is not None:
                 change_24h = round(avg_price - past, 4)
                 pct_change = round(change_24h / past * 100, 2) if past else None
-
-            rows_m.append(row_m)
 
             rows_s.append(
                 {
@@ -166,18 +166,8 @@ def main() -> None:
             )
 
             event_prices[candidate] = avg_price
-            rows_o.append(
-                {
-                    "market_id": ticker,
-                    "outcome_name": candidate,
-                    "price": avg_price,
-                    "volume": None,
-                    "timestamp": ts,
-                    "source": "kalshi",
-                }
-            )
 
-        # Add other candidate outcomes so each market shows full choices
+        # insert a row per outcome for each market
         for m in markets:
             ticker = m.get("ticker")
             if not ticker:
@@ -185,8 +175,6 @@ def main() -> None:
             for cand, pr in event_prices.items():
                 if pr is None:
                     continue
-                if cand == ticker.split("-")[-1]:
-                    continue  # already added above
                 rows_o.append(
                     {
                         "market_id": ticker,
