@@ -145,6 +145,7 @@ def main():
     known_ids = set(active.keys())
 
     snapshots, outcomes = [] , []
+    event_prices: dict[str, dict[str, float]] = {}
     skipped = 0
     for m in top_markets:
         mid = m.get("ticker")
@@ -190,10 +191,32 @@ def main():
         })
 
         if last_price is not None:
+            cand = mid.split("-")[-1]
+            evt  = mid.rsplit("-", 1)[0]
+            event_prices.setdefault(evt, {})[cand] = last_price
             outcomes.append({
                 "market_id":    mid,
-                "outcome_name": m.get("title") or mid,
+                "outcome_name": cand,
                 "price":        last_price,
+                "volume":       None,
+                "timestamp":    ts,
+                "source":       "kalshi",
+            })
+
+    # replicate full outcome set for each market
+    for m in top_markets:
+        mid = m.get("ticker")
+        if not mid:
+            continue
+        evt = mid.rsplit("-", 1)[0]
+        cand_self = mid.split("-")[-1]
+        for cand, price in event_prices.get(evt, {}).items():
+            if cand == cand_self or price is None:
+                continue
+            outcomes.append({
+                "market_id":    mid,
+                "outcome_name": cand,
+                "price":        price,
                 "volume":       None,
                 "timestamp":    ts,
                 "source":       "kalshi",
