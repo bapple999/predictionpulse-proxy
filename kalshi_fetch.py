@@ -117,9 +117,15 @@ def main() -> None:
             candidate = row_m["market_name"]
             expiration = row_m["expiration"]
             price = m.get("last_price")
+            if price is not None and price > 1:
+                price /= 100
 
             yes_bid = m.get("yes_bid")
+            if yes_bid is not None and yes_bid > 1:
+                yes_bid /= 100
             yes_ask = m.get("yes_ask")
+            if yes_ask is not None and yes_ask > 1:
+                yes_ask /= 100
             avg_price = None
             if yes_bid is not None and yes_ask is not None:
                 avg_price = round((yes_bid + yes_ask) / 2, 4)
