@@ -8,6 +8,7 @@ on:
 jobs:
   prune-snapshots:
     runs-on: ubuntu-latest
+    concurrency: cleanup-markets
 
     steps:
       - uses: actions/checkout@v4

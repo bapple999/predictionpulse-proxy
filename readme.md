@@ -136,10 +136,11 @@ Supabase project URL. The React app will fail if these variables are missing.
 
 | Workflow file                  | Script                               | Cron          |
 | ------------------------------ | ------------------------------------ | ------------- |
-| `kalshi_fetch.yml`             | `python kalshi_fetch.py`             | `0 5 * * *`   |
-| `kalshi_update.yml`            | `python kalshi_update_prices.py`     | `*/5 * * * *` |
-| `polymarket-fetch.yml`         | `python polymarket_fetch.py`         | `0 6 * * *`   |
-| `polymarket_price_updates.yml` | `python polymarket_update_prices.py` | `*/5 * * * *` |
+| `kalshi_fetch.yml`             | `python kalshi_fetch.py`             | `0 5 * * *`   |
+| `kalshi_update.yml`            | `python kalshi_update_prices.py`     | `*/5 * * * *` |
+| `polymarket-fetch.yml`         | `python polymarket_fetch.py`         | `0 6 * * *`   |
+| `polymarket_price_updates.yml` | `python polymarket_update_prices.py` | `*/5 * * * *` |
+| `cleanup_markets.yml`          | `python cleanup_markets.py`          | `0 7 * * *`   |
 
 Full‑fetch jobs rebuild metadata once a day; lightweight update jobs keep quotes fresh every five minutes without hammering the APIs.
 
