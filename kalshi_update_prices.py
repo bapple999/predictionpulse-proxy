@@ -103,6 +103,8 @@ def fetch_trade_stats(ticker: str):
             if ts >= cutoff:
                 size = t["size"]
                 price = t["price"]
+                if price is not None and price > 1:
+                    price /= 100
                 total_contracts += size
                 total_dollar_volume += size * price
 
@@ -166,8 +168,14 @@ def main():
             continue
 
         last_price = m.get("last_price")
+        if last_price is not None and last_price > 1:
+            last_price /= 100
         yes_bid = m.get("yes_bid")
+        if yes_bid is not None and yes_bid > 1:
+            yes_bid /= 100
         no_bid = m.get("no_bid")
+        if no_bid is not None and no_bid > 1:
+            no_bid /= 100
         if last_price is None and yes_bid is None and no_bid is None:
             logging.info("skipping %s: no price data", mid)
             skipped += 1
