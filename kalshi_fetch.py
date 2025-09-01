@@ -192,11 +192,11 @@ def main() -> None:
                     }
                 )
 
-    insert_to_supabase("events", rows_e, conflict_key="event_id")
-    insert_to_supabase("markets", rows_m)
-    insert_to_supabase("market_snapshots", rows_s, conflict_key=None)
-    insert_to_supabase("market_prices", rows_p, conflict_key=None)
-    insert_to_supabase("market_outcomes", rows_o, conflict_key=None)
+    # insert_to_supabase("events", rows_e, conflict_key="event_id")
+    # insert_to_supabase("markets", rows_m)
+    # insert_to_supabase("market_snapshots", rows_s, conflict_key=None)
+    # insert_to_supabase("market_prices", rows_p, conflict_key=None)
+    # insert_to_supabase("market_outcomes", rows_o, conflict_key=None)
 
     diag_url = (
         f"{SUPABASE_URL}/rest/v1/latest_snapshots?select=market_id,source,price&order=timestamp.desc&limit=3"

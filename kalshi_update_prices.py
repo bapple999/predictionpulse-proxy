@@ -231,8 +231,8 @@ def main():
             })
 
     logging.info("writing %s snapshots and %s outcomes", len(snapshots), len(outcomes))
-    insert_to_supabase("market_snapshots", snapshots, conflict_key=None)
-    insert_to_supabase("market_outcomes", outcomes, conflict_key=None)
+    # insert_to_supabase("market_snapshots", snapshots, conflict_key=None)
+    # insert_to_supabase("market_outcomes", outcomes, conflict_key=None)
     if skipped:
         logging.info("skipped %s markets", skipped)
     logging.info("done")
