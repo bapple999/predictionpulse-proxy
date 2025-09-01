@@ -237,9 +237,9 @@ def main():
             })
 
     # ── insert in FK-safe order
-    insert_to_supabase("markets", rows_m)
-    insert_to_supabase("market_snapshots", rows_s, conflict_key=None)
-    insert_to_supabase("market_outcomes", rows_o, conflict_key=None)
+    # insert_to_supabase("markets", rows_m)
+    # insert_to_supabase("market_snapshots", rows_s, conflict_key=None)
+    # insert_to_supabase("market_outcomes", rows_o, conflict_key=None)
 
     logging.info(
         "Inserted %s markets, %s snapshots, %s outcomes",

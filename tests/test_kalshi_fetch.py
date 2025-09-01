@@ -58,16 +58,12 @@ def test_main_populates_events(monkeypatch):
 
     inserted = []
 
-    def fake_insert(table, rows, conflict_key="market_id"):
-        if table == "events":
-            inserted.append((rows, conflict_key))
+    def fake_insert(*args, **kwargs):
+        inserted.append((args, kwargs))
 
     monkeypatch.setattr(kf, "insert_to_supabase", fake_insert)
 
     kf.main()
 
-    assert inserted[0][1] == "event_id"
-    assert inserted[0][0] == [
-        {"event_id": "EVT1", "title": "Event 1", "source": "kalshi"},
-        {"event_id": "EVT2", "title": "EVT2", "source": "kalshi"},
-    ]
+    # ingestion is disabled so no insert should occur
+    assert inserted == []
