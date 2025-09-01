@@ -52,14 +52,41 @@ def delete_where(table: str, where: dict) -> int:
         return 0
 
 
+def fetch_expired_market_ids(now: str) -> list[str]:
+    """Return a list of market IDs with expiration < ``now``."""
+    url = f"{SUPABASE_URL}/rest/v1/markets"
+    params = {"expiration": f"lt.{now}", "select": "market_id"}
+    try:
+        r = requests.get(url, headers=HEADERS, params=params, timeout=30)
+        if r.status_code != 200:
+            print(f"❌ markets fetch failed {r.status_code}: {r.text[:200]}")
+            return []
+        data = r.json() if r.text else []
+        return [row.get("market_id") for row in data if "market_id" in row]
+    except Exception as exc:
+        print(f"❌ markets fetch error: {exc}")
+        return []
+
+
 def delete_old_snapshots(cutoff: str) -> None:
     count = delete_where("market_snapshots", {"timestamp": f"lt.{cutoff}"})
     print(f"📉 deleted {count} old snapshots (< {cutoff})")
 
 
 def delete_expired_markets(now: str) -> None:
+    # Remove outcomes associated with expired markets first
+    expired_ids = fetch_expired_market_ids(now)
+    count_o = 0
+    if expired_ids:
+        ids = ",".join(expired_ids)
+        count_o = delete_where("market_outcomes", {"market_id": f"in.({ids})"})
+    print(f"🗑️  deleted {count_o} expired outcomes")
+
+    # Then remove expired snapshots
     count_s = delete_where("market_snapshots", {"expiration": f"lt.{now}"})
     print(f"🗑️  deleted {count_s} expired snapshots")
+
+    # Finally remove the markets themselves
     count_m = delete_where("markets", {"expiration": f"lt.{now}"})
     print(f"🗑️  deleted {count_m} expired markets")
 
